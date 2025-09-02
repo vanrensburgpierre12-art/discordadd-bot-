@@ -6,8 +6,9 @@ from datetime import datetime, timedelta
 
 from config import Config
 from flask_app import app  # import Flask app for context
-from database import db, User, GiftCard, DailyCasinoLimit
+from database import db, User, GiftCard, DailyCasinoLimit, UserWallet
 from casino_games import DiceGame, SlotsGame, BlackjackGame
+from wallet_manager import WalletManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +27,7 @@ class RewardsBot(commands.Bot):
 
     async def on_ready(self):
         logger.info(f"{self.user} has connected to Discord!")
-        await self.change_presence(activity=discord.Game(name="/earn to watch ads! | /casino to play games!"))
+        await self.change_presence(activity=discord.Game(name="/earn | /casino | /wallet - Earn, Play, Deposit!"))
 
 bot = RewardsBot()
 
@@ -420,6 +421,160 @@ async def casino_info(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Error in casino command: {e}")
         await interaction.response.send_message("❌ An error occurred while fetching casino information.", ephemeral=True)
+
+
+@bot.tree.command(name="wallet", description="View your wallet information and deposit packages")
+async def wallet_info(interaction: discord.Interaction):
+    """Show wallet information and deposit packages"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get wallet info
+            wallet_info = WalletManager.get_wallet_info(user_id)
+            if not wallet_info['success']:
+                await interaction.response.send_message(f"❌ {wallet_info['error']}", ephemeral=True)
+                return
+
+            # Get deposit packages
+            packages_info = WalletManager.get_deposit_packages()
+            
+            embed = discord.Embed(
+                title="💳 Wallet Information",
+                description="Manage your cash deposits and point balance",
+                color=0x0099ff
+            )
+            
+            # Wallet stats
+            wallet = wallet_info['wallet']
+            embed.add_field(name="💰 Current Balance", value=f"**{user.points_balance:,}** points", inline=True)
+            embed.add_field(name="💵 Total Deposited", value=f"**${wallet['total_deposited']:.2f}**", inline=True)
+            embed.add_field(name="🎁 Lifetime Bonus", value=f"**{wallet['lifetime_bonus']:,}** points", inline=True)
+            
+            # Recent transactions
+            recent_txns = wallet_info['recent_transactions'][:3]  # Show last 3
+            if recent_txns:
+                txn_text = ""
+                for txn in recent_txns:
+                    status_emoji = "✅" if txn['status'] == 'completed' else "⏳" if txn['status'] == 'pending' else "❌"
+                    txn_text += f"{status_emoji} ${txn['amount_usd']:.2f} ({txn['points_amount']:+,} pts)\n"
+                embed.add_field(name="📋 Recent Transactions", value=txn_text or "None", inline=False)
+            
+            # Deposit packages
+            packages_text = ""
+            for pkg in packages_info['packages'][:3]:  # Show first 3 packages
+                packages_text += f"**${pkg['amount_usd']}** → {pkg['total_points']:,} pts (+{pkg['bonus_percentage']:.0f}% bonus)\n"
+            
+            embed.add_field(name="💎 Deposit Packages", value=packages_text, inline=False)
+            embed.add_field(name="🔗 Deposit Link", value=f"[Add Funds]({Config.WEBHOOK_URL.replace('/postback', '/wallet')})", inline=True)
+            embed.add_field(name="📊 Exchange Rate", value=f"**{Config.POINTS_PER_DOLLAR}** pts/$1", inline=True)
+            embed.add_field(name="🎁 Bonus", value=f"**+{Config.WALLET_BONUS_PERCENTAGE*100:.0f}%** on deposits", inline=True)
+            
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in wallet command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching wallet information.", ephemeral=True)
+
+
+@bot.tree.command(name="deposit", description="Get deposit packages and payment information")
+async def deposit_info(interaction: discord.Interaction):
+    """Show deposit packages and payment options"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get deposit packages
+            packages_info = WalletManager.get_deposit_packages()
+            
+            embed = discord.Embed(
+                title="💳 Deposit Packages",
+                description="Add cash to your wallet and get bonus points!",
+                color=0x00ff00
+            )
+            
+            # Show all packages
+            for pkg in packages_info['packages']:
+                embed.add_field(
+                    name=f"💎 ${pkg['amount_usd']} Package",
+                    value=f"**{pkg['total_points']:,}** points\n({pkg['base_points']:,} base + {pkg['bonus_points']:,} bonus)\n**+{pkg['bonus_percentage']:.0f}%** bonus",
+                    inline=True
+                )
+            
+            embed.add_field(name="💰 Current Balance", value=f"**{user.points_balance:,}** points", inline=False)
+            embed.add_field(name="🔗 Payment Link", value=f"[Add Funds Now]({Config.WEBHOOK_URL.replace('/postback', '/wallet')})", inline=True)
+            embed.add_field(name="💳 Payment Methods", value="Stripe, PayPal, Crypto", inline=True)
+            embed.add_field(name="⚡ Processing", value="Instant", inline=True)
+            
+            embed.set_footer(text="Deposits are processed instantly with bonus points!")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in deposit command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching deposit information.", ephemeral=True)
+
+
+@bot.tree.command(name="withdraw", description="Request a withdrawal (convert points to cash)")
+async def withdraw_request(interaction: discord.Interaction, amount_usd: float):
+    """Request a withdrawal of points to cash"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Create withdrawal request
+            result = WalletManager.create_withdrawal_request(user_id, amount_usd)
+            
+            if not result['success']:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+
+            embed = discord.Embed(
+                title="💸 Withdrawal Request",
+                description="Your withdrawal request has been submitted for review",
+                color=0xffa500
+            )
+            
+            embed.add_field(name="💰 Amount Requested", value=f"**${amount_usd:.2f}**", inline=True)
+            embed.add_field(name="🎯 Points Deducted", value=f"**{result['points_deducted']:,}**", inline=True)
+            embed.add_field(name="📊 New Balance", value=f"**{user.points_balance:,}** points", inline=True)
+            embed.add_field(name="📋 Transaction ID", value=f"**#{result['transaction_id']}**", inline=True)
+            embed.add_field(name="⏳ Status", value="**Pending Review**", inline=True)
+            embed.add_field(name="💳 Payment Method", value="PayPal", inline=True)
+            
+            embed.add_field(
+                name="ℹ️ Processing Info", 
+                value="Withdrawals are reviewed within 24 hours. You'll receive payment via PayPal once approved.",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in withdraw command: {e}")
+        await interaction.response.send_message("❌ An error occurred while processing withdrawal request.", ephemeral=True)
 
 
 def run_bot():

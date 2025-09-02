@@ -71,6 +71,38 @@ class DailyCasinoLimit(db.Model):
     def __repr__(self):
         return f'<DailyCasinoLimit User: {self.user_id}, Date: {self.date}>'
 
+class WalletTransaction(db.Model):
+    __tablename__ = 'wallet_transactions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(20), nullable=False)
+    transaction_type = db.Column(db.String(20), nullable=False)  # 'deposit', 'withdrawal', 'bonus', 'refund'
+    amount_usd = db.Column(db.Numeric(10, 2), nullable=False)  # Amount in USD
+    points_amount = db.Column(db.Integer, nullable=False)  # Points added/removed
+    payment_method = db.Column(db.String(50), nullable=True)  # 'stripe', 'paypal', 'crypto', etc.
+    payment_id = db.Column(db.String(100), nullable=True)  # External payment ID
+    status = db.Column(db.String(20), default='pending')  # 'pending', 'completed', 'failed', 'cancelled'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    
+    def __repr__(self):
+        return f'<WalletTransaction User: {self.user_id}, Type: {self.transaction_type}, Amount: ${self.amount_usd}>'
+
+class UserWallet(db.Model):
+    __tablename__ = 'user_wallets'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(20), nullable=False, unique=True)
+    total_deposited = db.Column(db.Numeric(10, 2), default=0.00)  # Total USD deposited
+    total_withdrawn = db.Column(db.Numeric(10, 2), default=0.00)  # Total USD withdrawn
+    lifetime_bonus = db.Column(db.Integer, default=0)  # Total bonus points received
+    last_deposit_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<UserWallet User: {self.user_id}, Deposited: ${self.total_deposited}>'
+
 def init_db(app):
     """Initialize the database with the Flask app"""
     db.init_app(app)

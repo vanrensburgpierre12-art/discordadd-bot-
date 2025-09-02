@@ -36,6 +36,12 @@ class Config:
     CASINO_DAILY_LIMIT = int(os.getenv('CASINO_DAILY_LIMIT', 1000))  # Max points that can be won/lost per day
     CASINO_HOUSE_EDGE = float(os.getenv('CASINO_HOUSE_EDGE', 0.05))  # 5% house edge
     
+    # Wallet Configuration
+    POINTS_PER_DOLLAR = int(os.getenv('POINTS_PER_DOLLAR', 100))  # 100 points per $1
+    MIN_DEPOSIT = float(os.getenv('MIN_DEPOSIT', 5.00))  # Minimum $5 deposit
+    MAX_DEPOSIT = float(os.getenv('MAX_DEPOSIT', 100.00))  # Maximum $100 deposit
+    WALLET_BONUS_PERCENTAGE = float(os.getenv('WALLET_BONUS_PERCENTAGE', 0.10))  # 10% bonus on deposits
+    
     # Rate Limiting
     EARN_COOLDOWN = int(os.getenv('EARN_COOLDOWN', 300))  # 5 minutes
     CASINO_COOLDOWN = int(os.getenv('CASINO_COOLDOWN', 30))  # 30 seconds between casino games

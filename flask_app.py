@@ -11,7 +11,8 @@ import requests
 from sqlalchemy import text
 
 from config import Config
-from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, init_db
+from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, WalletTransaction, UserWallet, init_db
+from wallet_manager import WalletManager
 from notifications import send_points_notification 
 
 # Configure logging
@@ -105,6 +106,15 @@ def index():
                 <li><strong>🃏 Blackjack:</strong> Beat the dealer to 21 for 2x winnings</li>
             </ul>
             
+            <h2>💳 Wallet System</h2>
+            <p>Users can deposit cash to get points with bonuses:</p>
+            <ul>
+                <li><strong>💎 Deposit Packages:</strong> $5-$100 with 10% bonus points</li>
+                <li><strong>💵 Exchange Rate:</strong> 100 points per $1 (110 with bonus)</li>
+                <li><strong>💸 Withdrawals:</strong> Convert points back to cash via PayPal</li>
+                <li><strong>⚡ Instant Processing:</strong> Deposits processed immediately</li>
+            </ul>
+            
             <h2>🔧 Configuration</h2>
             <ul>
                 <li><strong>Webhook URL:</strong> {webhook_url}</li>
@@ -170,6 +180,16 @@ def platform_stats():
         slots_games = CasinoGame.query.filter_by(game_type='slots').count()
         blackjack_games = CasinoGame.query.filter_by(game_type='blackjack').count()
         
+        # Wallet statistics
+        total_deposits = db.session.query(db.func.sum(WalletTransaction.amount_usd)).filter_by(
+            transaction_type='deposit', status='completed'
+        ).scalar() or 0
+        total_withdrawals = db.session.query(db.func.sum(WalletTransaction.amount_usd)).filter_by(
+            transaction_type='withdrawal', status='completed'
+        ).scalar() or 0
+        total_wallet_transactions = WalletTransaction.query.count()
+        active_wallets = UserWallet.query.count()
+        
         return jsonify({
             'total_users': total_users,
             'total_points_in_circulation': total_points,
@@ -187,6 +207,15 @@ def platform_stats():
                     'slots': slots_games,
                     'blackjack': blackjack_games
                 }
+            },
+            'wallet': {
+                'total_deposits_usd': float(total_deposits),
+                'total_withdrawals_usd': float(total_withdrawals),
+                'net_deposits_usd': float(total_deposits - total_withdrawals),
+                'total_transactions': total_wallet_transactions,
+                'active_wallets': active_wallets,
+                'exchange_rate': Config.POINTS_PER_DOLLAR,
+                'bonus_percentage': Config.WALLET_BONUS_PERCENTAGE * 100
             },
             'timestamp': datetime.utcnow().isoformat()
         })
@@ -385,6 +414,102 @@ def webhook_info():
     """
     
     return html
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.route('/wallet/packages')
+def wallet_packages():
+    """Get available wallet deposit packages"""
+    try:
+        packages = WalletManager.get_deposit_packages()
+        return jsonify(packages)
+    except Exception as e:
+        logger.error(f"Error getting wallet packages: {e}")
+        return jsonify({'error': 'Failed to get wallet packages'}), 500
+
+@app.route('/wallet/deposit', methods=['POST'])
+def create_deposit():
+    """Create a new deposit transaction"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        user_id = data.get('user_id')
+        amount_usd = data.get('amount_usd')
+        payment_method = data.get('payment_method', 'stripe')
+        
+        if not user_id or not amount_usd:
+            return jsonify({'error': 'Missing user_id or amount_usd'}), 400
+        
+        result = WalletManager.create_deposit_transaction(user_id, amount_usd, payment_method)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error creating deposit: {e}")
+        return jsonify({'error': 'Failed to create deposit'}), 500
+
+@app.route('/wallet/complete/<int:transaction_id>', methods=['POST'])
+def complete_deposit(transaction_id):
+    """Complete a deposit transaction (called by payment processor webhook)"""
+    try:
+        result = WalletManager.complete_deposit_transaction(transaction_id)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error completing deposit: {e}")
+        return jsonify({'error': 'Failed to complete deposit'}), 500
+
+@app.route('/wallet/info/<user_id>')
+def wallet_info(user_id):
+    """Get wallet information for a user"""
+    try:
+        result = WalletManager.get_wallet_info(user_id)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error getting wallet info: {e}")
+        return jsonify({'error': 'Failed to get wallet info'}), 500
+
+@app.route('/wallet/withdraw', methods=['POST'])
+def create_withdrawal():
+    """Create a withdrawal request"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        user_id = data.get('user_id')
+        amount_usd = data.get('amount_usd')
+        payment_method = data.get('payment_method', 'paypal')
+        
+        if not user_id or not amount_usd:
+            return jsonify({'error': 'Missing user_id or amount_usd'}), 400
+        
+        result = WalletManager.create_withdrawal_request(user_id, amount_usd, payment_method)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error creating withdrawal: {e}")
+        return jsonify({'error': 'Failed to create withdrawal'}), 500
 
 @app.errorhandler(404)
 def not_found(error):
