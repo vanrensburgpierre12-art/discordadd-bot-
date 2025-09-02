@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,7 +11,12 @@ class Config:
     ADMIN_ROLE_ID = int(os.getenv('ADMIN_ROLE_ID', 0))
     
     # Database Configuration
-    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///rewards.db')
+    DATA_DIR = Path("/app/data")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)  # make sure dir exists
+
+    DEFAULT_DB = DATA_DIR / "rewards.db"
+    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://rewards_user:rewards_pass@postgres:5432/rewards_db")
+
     
     # Webhook Configuration
     WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', 'your-secret-key')
@@ -31,3 +37,4 @@ class Config:
     FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
     FLASK_PORT = int(os.getenv('FLASK_PORT', 5000))
     FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+

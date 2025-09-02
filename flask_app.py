@@ -8,10 +8,11 @@ from datetime import datetime
 import threading
 import asyncio
 import requests
+from sqlalchemy import text
 
 from config import Config
 from database import db, User, GiftCard, AdCompletion, init_db
-from discord_bot import send_points_notification
+from notifications import send_points_notification 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +28,9 @@ CORS(app)
 
 # Initialize database
 init_db(app)
+
+print(">>> Using database:", app.config['SQLALCHEMY_DATABASE_URI'], flush=True)
+
 
 def verify_webhook_signature(payload, signature, secret):
     """Verify webhook signature to prevent tampering"""
@@ -112,8 +116,8 @@ def index():
 def health_check():
     """Health check endpoint"""
     try:
-        # Check database connection
-        db.session.execute('SELECT 1')
+        # Proper SQLAlchemy syntax
+        db.session.execute(text('SELECT 1'))
         db_status = 'healthy'
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
