@@ -32,8 +32,17 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_earn_time = db.Column(db.DateTime, nullable=True)
     
+    # User management fields
+    user_status = db.Column(db.String(20), default='active')  # 'active', 'banned', 'suspended'
+    ban_reason = db.Column(db.Text, nullable=True)
+    banned_at = db.Column(db.DateTime, nullable=True)
+    banned_by = db.Column(db.String(20), nullable=True)  # Admin user ID who banned
+    last_activity = db.Column(db.DateTime, default=datetime.utcnow)
+    total_games_played = db.Column(db.Integer, default=0)
+    total_gift_cards_redeemed = db.Column(db.Integer, default=0)
+    
     def __repr__(self):
-        return f'<User {self.username} (ID: {self.id})>'
+        return f'<User {self.username} (ID: {self.id}, Status: {self.user_status})>'
 
 class GiftCard(db.Model):
     __tablename__ = 'gift_cards'
