@@ -4,6 +4,26 @@ import uuid
 
 db = SQLAlchemy()
 
+class Server(db.Model):
+    __tablename__ = 'servers'
+    
+    id = db.Column(db.String(20), primary_key=True)  # Discord server ID
+    name = db.Column(db.String(100), nullable=False)
+    owner_id = db.Column(db.String(20), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_activity = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Server-specific settings
+    points_per_ad = db.Column(db.Integer, default=20)
+    redemption_threshold = db.Column(db.Integer, default=1000)
+    casino_min_bet = db.Column(db.Integer, default=10)
+    casino_max_bet = db.Column(db.Integer, default=500)
+    casino_daily_limit = db.Column(db.Integer, default=1000)
+    
+    def __repr__(self):
+        return f'<Server {self.name} (ID: {self.id})>'
+
 class User(db.Model):
     __tablename__ = 'users'
     
@@ -123,14 +143,50 @@ class DiscordTransaction(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(20), nullable=False)
+    server_id = db.Column(db.String(20), nullable=False)  # Which server the transaction happened in
     transaction_type = db.Column(db.String(20), nullable=False)  # 'server_boost', 'nitro_gift', 'subscription'
     tier_name = db.Column(db.String(50), nullable=False)
     points_awarded = db.Column(db.Integer, nullable=False)
     discord_data = db.Column(db.Text, nullable=True)  # JSON data from Discord
+    status = db.Column(db.String(20), default='pending')  # 'pending', 'approved', 'rejected'
+    approved_by = db.Column(db.String(20), nullable=True)  # Admin who approved
+    approved_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def __repr__(self):
         return f'<DiscordTransaction User: {self.user_id}, Type: {self.transaction_type}>'
+
+class AdminUser(db.Model):
+    __tablename__ = 'admin_users'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(20), nullable=False, unique=True)
+    username = db.Column(db.String(100), nullable=False)
+    admin_level = db.Column(db.String(20), default='moderator')  # 'moderator', 'admin', 'super_admin'
+    can_approve_transactions = db.Column(db.Boolean, default=True)
+    can_manage_servers = db.Column(db.Boolean, default=False)
+    can_view_all_data = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.String(20), nullable=True)
+    
+    def __repr__(self):
+        return f'<AdminUser {self.username} (Level: {self.admin_level})>'
+
+class TransactionApproval(db.Model):
+    __tablename__ = 'transaction_approvals'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    transaction_id = db.Column(db.Integer, nullable=False)  # References WalletTransaction or DiscordTransaction
+    transaction_type = db.Column(db.String(20), nullable=False)  # 'wallet', 'discord'
+    status = db.Column(db.String(20), default='pending')  # 'pending', 'approved', 'rejected'
+    requested_by = db.Column(db.String(20), nullable=False)  # User who requested
+    approved_by = db.Column(db.String(20), nullable=True)  # Admin who approved
+    rejection_reason = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    processed_at = db.Column(db.DateTime, nullable=True)
+    
+    def __repr__(self):
+        return f'<TransactionApproval Transaction: {self.transaction_id}, Status: {self.status}>'
 
 def init_db(app):
     """Initialize the database with the Flask app"""

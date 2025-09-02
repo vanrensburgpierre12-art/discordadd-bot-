@@ -6,10 +6,11 @@ from datetime import datetime, timedelta
 
 from config import Config
 from flask_app import app  # import Flask app for context
-from database import db, User, GiftCard, DailyCasinoLimit, UserWallet, UserSubscription
+from database import db, User, GiftCard, DailyCasinoLimit, UserWallet, UserSubscription, Server, AdminUser
 from casino_games import DiceGame, SlotsGame, BlackjackGame
 from wallet_manager import WalletManager
 from discord_monetization import DiscordMonetizationManager
+from admin_manager import AdminManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +30,71 @@ class RewardsBot(commands.Bot):
     async def on_ready(self):
         logger.info(f"{self.user} has connected to Discord!")
         await self.change_presence(activity=discord.Game(name="/earn | /casino | /wallet | /tiers - Complete Gaming Platform!"))
+        
+        # Register all servers the bot is in
+        for guild in self.guilds:
+            try:
+                with app.app_context():
+                    result = AdminManager.register_server(
+                        str(guild.id),
+                        guild.name,
+                        str(guild.owner_id)
+                    )
+                    if result['success']:
+                        logger.info(f"Registered server: {guild.name} ({guild.id})")
+            except Exception as e:
+                logger.error(f"Error registering server {guild.name}: {e}")
+
+    async def on_guild_join(self, guild):
+        """Handle bot being added to a new server"""
+        try:
+            with app.app_context():
+                result = AdminManager.register_server(
+                    str(guild.id),
+                    guild.name,
+                    str(guild.owner_id)
+                )
+                if result['success']:
+                    logger.info(f"Bot added to new server: {guild.name} ({guild.id})")
+                    
+                    # Send welcome message to server owner
+                    try:
+                        owner = guild.owner
+                        if owner:
+                            embed = discord.Embed(
+                                title="🎮 Welcome to Rewards Platform!",
+                                description="Thanks for adding me to your server!",
+                                color=0x00ff00
+                            )
+                            embed.add_field(
+                                name="🚀 Getting Started",
+                                value="• Use `/earn` to get ad links\n• Use `/casino` to play games\n• Use `/tiers` to see subscription benefits",
+                                inline=False
+                            )
+                            embed.add_field(
+                                name="💡 Features",
+                                value="• Watch ads for points\n• Play casino games\n• Subscribe for better odds\n• Redeem points for gift cards",
+                                inline=False
+                            )
+                            embed.set_footer(text="Use /help for more commands!")
+                            await owner.send(embed=embed)
+                    except Exception as e:
+                        logger.error(f"Error sending welcome message: {e}")
+        except Exception as e:
+            logger.error(f"Error handling guild join: {e}")
+
+    async def on_guild_remove(self, guild):
+        """Handle bot being removed from a server"""
+        try:
+            with app.app_context():
+                server = Server.query.filter_by(id=str(guild.id)).first()
+                if server:
+                    server.is_active = False
+                    server.last_activity = datetime.utcnow()
+                    db.session.commit()
+                    logger.info(f"Bot removed from server: {guild.name} ({guild.id})")
+        except Exception as e:
+            logger.error(f"Error handling guild remove: {e}")
 
 bot = RewardsBot()
 
@@ -741,6 +807,171 @@ async def subscription_status(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Error in subscription command: {e}")
         await interaction.response.send_message("❌ An error occurred while fetching subscription status.", ephemeral=True)
+
+
+@bot.tree.command(name="admin-pending", description="View pending transactions requiring approval (Admin only)")
+async def admin_pending_transactions(interaction: discord.Interaction):
+    """Show pending transactions for admin approval"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            
+            # Check if user is admin
+            if not AdminManager.is_admin(user_id):
+                await interaction.response.send_message("❌ You don't have admin permissions!", ephemeral=True)
+                return
+            
+            # Get pending transactions
+            result = AdminManager.get_pending_transactions(limit=10)
+            
+            if not result['success']:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="⏳ Pending Transactions",
+                description="Transactions awaiting approval",
+                color=0xffa500
+            )
+            
+            # Show wallet transactions
+            if result['wallet_transactions']:
+                wallet_text = ""
+                for txn in result['wallet_transactions'][:5]:  # Show first 5
+                    wallet_text += f"**#{txn['id']}** {txn['username']} - ${txn['amount_usd']:.2f} ({txn['points_amount']:+,} pts)\n"
+                embed.add_field(name="💳 Wallet Transactions", value=wallet_text or "None", inline=False)
+            
+            # Show Discord transactions
+            if result['discord_transactions']:
+                discord_text = ""
+                for txn in result['discord_transactions'][:5]:  # Show first 5
+                    discord_text += f"**#{txn['id']}** {txn['username']} - {txn['tier_name']} ({txn['points_awarded']:+,} pts)\n"
+                embed.add_field(name="🎮 Discord Transactions", value=discord_text or "None", inline=False)
+            
+            if result['total_pending'] == 0:
+                embed.add_field(name="✅ Status", value="No pending transactions", inline=False)
+            else:
+                embed.add_field(name="📊 Total Pending", value=f"**{result['total_pending']}** transactions", inline=False)
+            
+            embed.add_field(
+                name="🔧 Admin Actions",
+                value="Use the web admin panel to approve/reject transactions:\n`/admin-panel` for the link",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Admin: {interaction.user.display_name}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in admin-pending command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching pending transactions.", ephemeral=True)
+
+
+@bot.tree.command(name="admin-panel", description="Get link to web admin panel (Admin only)")
+async def admin_panel_link(interaction: discord.Interaction):
+    """Provide link to web admin panel"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            
+            # Check if user is admin
+            if not AdminManager.is_admin(user_id):
+                await interaction.response.send_message("❌ You don't have admin permissions!", ephemeral=True)
+                return
+            
+            admin_level = AdminManager.get_admin_level(user_id)
+            
+            embed = discord.Embed(
+                title="🔧 Admin Panel",
+                description="Access the web-based admin panel",
+                color=0x9b59b6
+            )
+            
+            embed.add_field(
+                name="🌐 Web Admin Panel",
+                value=f"[Open Admin Panel]({Config.WEBHOOK_URL.replace('/postback', '/admin')})",
+                inline=False
+            )
+            
+            embed.add_field(name="👤 Your Level", value=f"**{admin_level.title()}**", inline=True)
+            embed.add_field(name="🔑 Permissions", value="Full admin access", inline=True)
+            
+            embed.add_field(
+                name="📋 Available Actions",
+                value="• View pending transactions\n• Approve/reject transactions\n• Manage servers\n• View analytics\n• Add/remove admins",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="⚠️ Security Note",
+                value="Keep your admin credentials secure. Only share with trusted team members.",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Admin: {interaction.user.display_name}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in admin-panel command: {e}")
+        await interaction.response.send_message("❌ An error occurred while generating admin panel link.", ephemeral=True)
+
+
+@bot.tree.command(name="admin-servers", description="View server statistics (Admin only)")
+async def admin_server_stats(interaction: discord.Interaction):
+    """Show server statistics for admins"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            
+            # Check if user is admin
+            if not AdminManager.is_admin(user_id):
+                await interaction.response.send_message("❌ You don't have admin permissions!", ephemeral=True)
+                return
+            
+            # Get server stats
+            result = AdminManager.get_server_stats()
+            
+            if not result['success']:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="📊 Server Statistics",
+                description="Overview of all connected servers",
+                color=0x3498db
+            )
+            
+            embed.add_field(name="🏢 Total Servers", value=f"**{result['total_servers']}**", inline=True)
+            embed.add_field(name="✅ Active Servers", value=f"**{len([s for s in result['servers'] if s['is_active']])}**", inline=True)
+            
+            # Show server details
+            if result['servers']:
+                server_text = ""
+                for server in result['servers'][:5]:  # Show first 5 servers
+                    status = "🟢" if server['is_active'] else "🔴"
+                    server_text += f"{status} **{server['server_name']}**\n"
+                    server_text += f"   Users: {server['user_count']} | Transactions: {server['discord_transactions']}\n"
+                
+                embed.add_field(name="🏢 Server Details", value=server_text or "No servers", inline=False)
+            
+            embed.add_field(
+                name="📈 Platform Stats",
+                value=f"• Total servers: {result['total_servers']}\n• Active servers: {len([s for s in result['servers'] if s['is_active']])}\n• Total users: {sum(s['user_count'] for s in result['servers'])}",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Admin: {interaction.user.display_name}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in admin-servers command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching server statistics.", ephemeral=True)
 
 
 def run_bot():

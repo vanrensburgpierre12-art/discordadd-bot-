@@ -11,8 +11,9 @@ import requests
 from sqlalchemy import text
 
 from config import Config
-from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, WalletTransaction, UserWallet, UserSubscription, DiscordTransaction, init_db
+from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, WalletTransaction, UserWallet, UserSubscription, DiscordTransaction, Server, AdminUser, init_db
 from wallet_manager import WalletManager
+from admin_manager import AdminManager
 from notifications import send_points_notification 
 
 # Configure logging
@@ -122,6 +123,15 @@ def index():
                 <li><strong>💳 Nitro Gifts:</strong> Gift Nitro for points and temporary bonuses</li>
                 <li><strong>⭐ Subscriptions:</strong> Monthly tiers with casino bonus multipliers</li>
                 <li><strong>🎰 Tier Benefits:</strong> Higher tiers = better casino odds (+5% to +15%)</li>
+            </ul>
+            
+            <h2>🔧 Admin Panel</h2>
+            <p>Administrative features for managing the platform:</p>
+            <ul>
+                <li><strong>📊 Transaction Approval:</strong> Approve/reject pending transactions</li>
+                <li><strong>🏢 Multi-Server Support:</strong> Manage multiple Discord servers</li>
+                <li><strong>👥 Admin Management:</strong> Add/remove admin users with different permission levels</li>
+                <li><strong>📈 Analytics:</strong> View server statistics and user activity</li>
             </ul>
             
             <h2>🔧 Configuration</h2>
@@ -541,6 +551,135 @@ def create_withdrawal():
     except Exception as e:
         logger.error(f"Error creating withdrawal: {e}")
         return jsonify({'error': 'Failed to create withdrawal'}), 500
+
+@app.route('/admin/pending-transactions')
+def admin_pending_transactions():
+    """Get pending transactions for admin approval"""
+    try:
+        # In a real implementation, you'd verify admin permissions here
+        # For now, we'll just return the data
+        result = AdminManager.get_pending_transactions()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting pending transactions: {e}")
+        return jsonify({'error': 'Failed to get pending transactions'}), 500
+
+@app.route('/admin/approve-transaction', methods=['POST'])
+def admin_approve_transaction():
+    """Approve a pending transaction"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        transaction_id = data.get('transaction_id')
+        transaction_type = data.get('transaction_type')
+        admin_user_id = data.get('admin_user_id')
+        notes = data.get('notes')
+        
+        if not all([transaction_id, transaction_type, admin_user_id]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        result = AdminManager.approve_transaction(transaction_id, transaction_type, admin_user_id, notes)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error approving transaction: {e}")
+        return jsonify({'error': 'Failed to approve transaction'}), 500
+
+@app.route('/admin/reject-transaction', methods=['POST'])
+def admin_reject_transaction():
+    """Reject a pending transaction"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        transaction_id = data.get('transaction_id')
+        transaction_type = data.get('transaction_type')
+        admin_user_id = data.get('admin_user_id')
+        reason = data.get('reason')
+        
+        if not all([transaction_id, transaction_type, admin_user_id, reason]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        result = AdminManager.reject_transaction(transaction_id, transaction_type, admin_user_id, reason)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error rejecting transaction: {e}")
+        return jsonify({'error': 'Failed to reject transaction'}), 500
+
+@app.route('/admin/servers')
+def admin_server_stats():
+    """Get server statistics for admin panel"""
+    try:
+        result = AdminManager.get_server_stats()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting server stats: {e}")
+        return jsonify({'error': 'Failed to get server statistics'}), 500
+
+@app.route('/admin/register-server', methods=['POST'])
+def admin_register_server():
+    """Register a new server"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        server_id = data.get('server_id')
+        server_name = data.get('server_name')
+        owner_id = data.get('owner_id')
+        
+        if not all([server_id, server_name, owner_id]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        result = AdminManager.register_server(server_id, server_name, owner_id)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error registering server: {e}")
+        return jsonify({'error': 'Failed to register server'}), 500
+
+@app.route('/admin/add-admin', methods=['POST'])
+def admin_add_admin():
+    """Add a new admin user"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        user_id = data.get('user_id')
+        username = data.get('username')
+        admin_level = data.get('admin_level', 'moderator')
+        created_by = data.get('created_by')
+        
+        if not all([user_id, username]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        result = AdminManager.add_admin(user_id, username, admin_level, created_by)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error adding admin: {e}")
+        return jsonify({'error': 'Failed to add admin'}), 500
 
 @app.errorhandler(404)
 def not_found(error):
