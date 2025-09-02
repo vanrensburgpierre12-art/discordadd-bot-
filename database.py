@@ -1,8 +1,6 @@
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import uuid
-
-db = SQLAlchemy()
+from app_context import db
 
 class Server(db.Model):
     __tablename__ = 'servers'
@@ -188,9 +186,9 @@ class TransactionApproval(db.Model):
     def __repr__(self):
         return f'<TransactionApproval Transaction: {self.transaction_id}, Status: {self.status}>'
 
-def init_db(app):
-    """Initialize the database with the Flask app"""
-    db.init_app(app)
+def init_db():
+    """Initialize the database"""
+    from app_context import app
     
     with app.app_context():
         db.create_all()

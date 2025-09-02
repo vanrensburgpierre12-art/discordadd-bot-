@@ -6,8 +6,8 @@ Handles admin permissions, transaction approvals, and multi-server management
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from flask_app import app
-from database import db, AdminUser, TransactionApproval, WalletTransaction, DiscordTransaction, Server, User
+from app_context import app, db
+from database import AdminUser, TransactionApproval, WalletTransaction, DiscordTransaction, Server, User
 from config import Config
 
 logger = logging.getLogger(__name__)

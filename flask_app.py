@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import request, jsonify, render_template_string
 from flask_cors import CORS
 import logging
 import hashlib
@@ -11,7 +11,8 @@ import requests
 from sqlalchemy import text
 
 from config import Config
-from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, WalletTransaction, UserWallet, UserSubscription, DiscordTransaction, Server, AdminUser, init_db
+from app_context import app, db, init_database
+from database import User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, WalletTransaction, UserWallet, UserSubscription, DiscordTransaction, Server, AdminUser
 from wallet_manager import WalletManager
 from admin_manager import AdminManager
 from notifications import send_points_notification 
@@ -20,17 +21,12 @@ from notifications import send_points_notification
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = Config.FLASK_SECRET_KEY
-app.config['SQLALCHEMY_DATABASE_URI'] = Config.DATABASE_URL
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 # Initialize CORS
 CORS(app)
 
 # Initialize database
 try:
-    init_db(app)
+    init_database()
     print(">>> Using database:", app.config['SQLALCHEMY_DATABASE_URI'], flush=True)
 except Exception as e:
     logger.error(f"Database initialization failed: {e}")

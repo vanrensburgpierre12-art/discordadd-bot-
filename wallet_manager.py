@@ -7,8 +7,8 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
 from decimal import Decimal
-from flask_app import app
-from database import db, User, WalletTransaction, UserWallet
+from app_context import app, db
+from database import User, WalletTransaction, UserWallet
 from config import Config
 
 logger = logging.getLogger(__name__)
