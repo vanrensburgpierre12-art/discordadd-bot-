@@ -7,8 +7,8 @@ import logging
 import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
-from flask_app import app
-from database import db, User, UserSubscription, DiscordTransaction, UserWallet
+from app_context import app, db
+from database import User, UserSubscription, DiscordTransaction, UserWallet
 from config import Config
 
 logger = logging.getLogger(__name__)

@@ -7,8 +7,8 @@ import random
 import logging
 from datetime import datetime, date, timedelta
 from typing import Tuple, Dict, Any
-from flask_app import app
-from database import db, User, CasinoGame, DailyCasinoLimit
+from app_context import app, db
+from database import User, CasinoGame, DailyCasinoLimit
 from config import Config
 from discord_monetization import DiscordMonetizationManager
 

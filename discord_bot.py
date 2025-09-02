@@ -5,8 +5,8 @@ import logging
 from datetime import datetime, timedelta
 
 from config import Config
-from flask_app import app  # import Flask app for context
-from database import db, User, GiftCard, DailyCasinoLimit, UserWallet, UserSubscription, Server, AdminUser
+from app_context import app, db  # import Flask app for context
+from database import User, GiftCard, DailyCasinoLimit, UserWallet, UserSubscription, Server, AdminUser
 from casino_games import DiceGame, SlotsGame, BlackjackGame
 from wallet_manager import WalletManager
 from discord_monetization import DiscordMonetizationManager
