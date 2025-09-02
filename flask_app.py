@@ -11,7 +11,7 @@ import requests
 from sqlalchemy import text
 
 from config import Config
-from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, WalletTransaction, UserWallet, init_db
+from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, WalletTransaction, UserWallet, UserSubscription, DiscordTransaction, init_db
 from wallet_manager import WalletManager
 from notifications import send_points_notification 
 
@@ -115,6 +115,15 @@ def index():
                 <li><strong>⚡ Instant Processing:</strong> Deposits processed immediately</li>
             </ul>
             
+            <h2>🚀 Discord Monetization</h2>
+            <p>Users can support the server and get exclusive benefits:</p>
+            <ul>
+                <li><strong>🚀 Server Boosts:</strong> Boost server for points and casino bonuses</li>
+                <li><strong>💳 Nitro Gifts:</strong> Gift Nitro for points and temporary bonuses</li>
+                <li><strong>⭐ Subscriptions:</strong> Monthly tiers with casino bonus multipliers</li>
+                <li><strong>🎰 Tier Benefits:</strong> Higher tiers = better casino odds (+5% to +15%)</li>
+            </ul>
+            
             <h2>🔧 Configuration</h2>
             <ul>
                 <li><strong>Webhook URL:</strong> {webhook_url}</li>
@@ -190,6 +199,16 @@ def platform_stats():
         total_wallet_transactions = WalletTransaction.query.count()
         active_wallets = UserWallet.query.count()
         
+        # Discord monetization statistics
+        active_subscriptions = UserSubscription.query.filter_by(is_active=True).count()
+        total_discord_transactions = DiscordTransaction.query.count()
+        total_discord_points = db.session.query(db.func.sum(DiscordTransaction.points_awarded)).scalar() or 0
+        
+        # Subscription tier breakdown
+        basic_subs = UserSubscription.query.filter_by(subscription_tier='basic', is_active=True).count()
+        premium_subs = UserSubscription.query.filter_by(subscription_tier='premium', is_active=True).count()
+        vip_subs = UserSubscription.query.filter_by(subscription_tier='vip', is_active=True).count()
+        
         return jsonify({
             'total_users': total_users,
             'total_points_in_circulation': total_points,
@@ -216,6 +235,18 @@ def platform_stats():
                 'active_wallets': active_wallets,
                 'exchange_rate': Config.POINTS_PER_DOLLAR,
                 'bonus_percentage': Config.WALLET_BONUS_PERCENTAGE * 100
+            },
+            'discord_monetization': {
+                'active_subscriptions': active_subscriptions,
+                'total_discord_transactions': total_discord_transactions,
+                'total_discord_points': total_discord_points,
+                'subscription_breakdown': {
+                    'basic': basic_subs,
+                    'premium': premium_subs,
+                    'vip': vip_subs
+                },
+                'available_tiers': len(Config.SUBSCRIPTION_TIERS),
+                'server_boost_levels': len(Config.SERVER_BOOST_REWARDS)
             },
             'timestamp': datetime.utcnow().isoformat()
         })

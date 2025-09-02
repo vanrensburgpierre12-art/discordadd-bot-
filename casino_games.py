@@ -10,6 +10,7 @@ from typing import Tuple, Dict, Any
 from flask_app import app
 from database import db, User, CasinoGame, DailyCasinoLimit
 from config import Config
+from discord_monetization import DiscordMonetizationManager
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +83,16 @@ class DiceGame:
         # Roll dice
         dice_roll = random.randint(1, 6)
         
+        # Get subscription bonus
+        bonus_multiplier = DiscordMonetizationManager.get_casino_bonus_multiplier(user_id)
+        
         # Calculate winnings
         if dice_roll == guess:
-            # Exact match - 5x multiplier
-            win_amount = bet_amount * 5
-            result_text = f"🎲 **LUCKY!** You rolled {dice_roll} and guessed {guess}! You won **{win_amount:,}** points!"
+            # Exact match - 5x multiplier with subscription bonus
+            base_win = bet_amount * 5
+            win_amount = int(base_win * bonus_multiplier)
+            bonus_text = f" (+{int((bonus_multiplier - 1) * 100)}% tier bonus)" if bonus_multiplier > 1 else ""
+            result_text = f"🎲 **LUCKY!** You rolled {dice_roll} and guessed {guess}! You won **{win_amount:,}** points{bonus_text}!"
         else:
             # No match - lose bet
             win_amount = 0
@@ -147,6 +153,9 @@ class SlotsGame:
         symbols = ["🍒", "🍋", "🍊", "🍇", "🔔", "⭐", "💎", "7️⃣"]
         reels = [random.choice(symbols) for _ in range(3)]
         
+        # Get subscription bonus
+        bonus_multiplier = DiscordMonetizationManager.get_casino_bonus_multiplier(user_id)
+        
         # Calculate winnings based on combinations
         win_amount = 0
         result_text = ""
@@ -154,23 +163,34 @@ class SlotsGame:
         if reels[0] == reels[1] == reels[2]:
             # Three of a kind
             if reels[0] == "💎":
-                win_amount = bet_amount * 50  # Diamond jackpot
-                result_text = f"🎰 **JACKPOT!** 💎💎💎 You won **{win_amount:,}** points!"
+                base_win = bet_amount * 50  # Diamond jackpot
+                win_amount = int(base_win * bonus_multiplier)
+                bonus_text = f" (+{int((bonus_multiplier - 1) * 100)}% tier bonus)" if bonus_multiplier > 1 else ""
+                result_text = f"🎰 **JACKPOT!** 💎💎💎 You won **{win_amount:,}** points{bonus_text}!"
             elif reels[0] == "7️⃣":
-                win_amount = bet_amount * 20  # Lucky 7s
-                result_text = f"🎰 **LUCKY 7s!** 7️⃣7️⃣7️⃣ You won **{win_amount:,}** points!"
+                base_win = bet_amount * 20  # Lucky 7s
+                win_amount = int(base_win * bonus_multiplier)
+                bonus_text = f" (+{int((bonus_multiplier - 1) * 100)}% tier bonus)" if bonus_multiplier > 1 else ""
+                result_text = f"🎰 **LUCKY 7s!** 7️⃣7️⃣7️⃣ You won **{win_amount:,}** points{bonus_text}!"
             elif reels[0] == "⭐":
-                win_amount = bet_amount * 15  # Stars
-                result_text = f"🎰 **STAR POWER!** ⭐⭐⭐ You won **{win_amount:,}** points!"
+                base_win = bet_amount * 15  # Stars
+                win_amount = int(base_win * bonus_multiplier)
+                bonus_text = f" (+{int((bonus_multiplier - 1) * 100)}% tier bonus)" if bonus_multiplier > 1 else ""
+                result_text = f"🎰 **STAR POWER!** ⭐⭐⭐ You won **{win_amount:,}** points{bonus_text}!"
             else:
-                win_amount = bet_amount * 10  # Other three of a kind
-                result_text = f"🎰 **THREE OF A KIND!** {reels[0]}{reels[1]}{reels[2]} You won **{win_amount:,}** points!"
+                base_win = bet_amount * 10  # Other three of a kind
+                win_amount = int(base_win * bonus_multiplier)
+                bonus_text = f" (+{int((bonus_multiplier - 1) * 100)}% tier bonus)" if bonus_multiplier > 1 else ""
+                result_text = f"🎰 **THREE OF A KIND!** {reels[0]}{reels[1]}{reels[2]} You won **{win_amount:,}** points{bonus_text}!"
         elif reels[0] == reels[1] or reels[1] == reels[2] or reels[0] == reels[2]:
             # Two of a kind
-            win_amount = bet_amount * 2
-            result_text = f"🎰 **TWO OF A KIND!** {reels[0]}{reels[1]}{reels[2]} You won **{win_amount:,}** points!"
+            base_win = bet_amount * 2
+            win_amount = int(base_win * bonus_multiplier)
+            bonus_text = f" (+{int((bonus_multiplier - 1) * 100)}% tier bonus)" if bonus_multiplier > 1 else ""
+            result_text = f"🎰 **TWO OF A KIND!** {reels[0]}{reels[1]}{reels[2]} You won **{win_amount:,}** points{bonus_text}!"
         else:
             # No match
+            win_amount = 0
             result_text = f"🎰 {reels[0]}{reels[1]}{reels[2]} No match. You lost **{bet_amount:,}** points."
         
         # Update user balance

@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 
 from config import Config
 from flask_app import app  # import Flask app for context
-from database import db, User, GiftCard, DailyCasinoLimit, UserWallet
+from database import db, User, GiftCard, DailyCasinoLimit, UserWallet, UserSubscription
 from casino_games import DiceGame, SlotsGame, BlackjackGame
 from wallet_manager import WalletManager
+from discord_monetization import DiscordMonetizationManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +28,7 @@ class RewardsBot(commands.Bot):
 
     async def on_ready(self):
         logger.info(f"{self.user} has connected to Discord!")
-        await self.change_presence(activity=discord.Game(name="/earn | /casino | /wallet - Earn, Play, Deposit!"))
+        await self.change_presence(activity=discord.Game(name="/earn | /casino | /wallet | /tiers - Complete Gaming Platform!"))
 
 bot = RewardsBot()
 
@@ -575,6 +576,171 @@ async def withdraw_request(interaction: discord.Interaction, amount_usd: float):
     except Exception as e:
         logger.error(f"Error in withdraw command: {e}")
         await interaction.response.send_message("❌ An error occurred while processing withdrawal request.", ephemeral=True)
+
+
+@bot.tree.command(name="tiers", description="View available subscription tiers and their benefits")
+async def subscription_tiers(interaction: discord.Interaction):
+    """Show available subscription tiers and benefits"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get user's current subscription
+            subscription_info = DiscordMonetizationManager.get_subscription_info(user_id)
+            tiers_info = DiscordMonetizationManager.get_available_tiers()
+            
+            embed = discord.Embed(
+                title="💎 Subscription Tiers & Benefits",
+                description="Unlock better casino odds and exclusive rewards!",
+                color=0x9b59b6
+            )
+            
+            # Current subscription status
+            if subscription_info['has_subscription']:
+                embed.add_field(
+                    name="🎯 Your Current Tier",
+                    value=f"**{subscription_info['tier_name']}**\n+{subscription_info['casino_bonus']}% casino bonus\nExpires: {subscription_info['expires_at'][:10] if subscription_info['expires_at'] else 'Never'}",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="🎯 Your Current Tier",
+                    value="**Free User**\nNo casino bonuses",
+                    inline=False
+                )
+            
+            # Server Boost tiers
+            embed.add_field(
+                name="🚀 Server Boosts",
+                value="Boost this server for points and casino bonuses!",
+                inline=False
+            )
+            
+            for tier_key, tier_info in Config.SERVER_BOOST_REWARDS.items():
+                casino_bonus = Config.SUBSCRIPTION_TIERS.get(tier_key, {}).get('casino_bonus', 0) * 100
+                embed.add_field(
+                    name=f"🔹 {tier_info['name']}",
+                    value=f"**{tier_info['boosts']}** boosts → **{tier_info['points']:,}** points\n+{casino_bonus}% casino bonus",
+                    inline=True
+                )
+            
+            # Nitro Gift tiers
+            embed.add_field(
+                name="💳 Nitro Gifts",
+                value="Gift Nitro to get points and temporary bonuses!",
+                inline=False
+            )
+            
+            for nitro_key, nitro_info in Config.NITRO_GIFT_REWARDS.items():
+                embed.add_field(
+                    name=f"🔹 {nitro_info['name']}",
+                    value=f"**${nitro_info['price']}** → **{nitro_info['points']:,}** points\n30-day bonus period",
+                    inline=True
+                )
+            
+            # Subscription tiers
+            embed.add_field(
+                name="⭐ Server Subscriptions",
+                value="Subscribe monthly for consistent bonuses!",
+                inline=False
+            )
+            
+            for sub_key, sub_info in Config.SUBSCRIPTION_TIERS.items():
+                embed.add_field(
+                    name=f"🔹 {sub_info['name']}",
+                    value=f"**${sub_info['price']}/month** → **{sub_info['points']:,}** points\n+{sub_info['casino_bonus']*100}% casino bonus",
+                    inline=True
+                )
+            
+            embed.add_field(
+                name="🎰 Casino Benefits",
+                value="Higher tiers = Better odds in all casino games!",
+                inline=False
+            )
+            
+            embed.set_footer(text="Use Discord's built-in features to subscribe and get rewards!")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in tiers command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching tier information.", ephemeral=True)
+
+
+@bot.tree.command(name="subscription", description="View your current subscription status and benefits")
+async def subscription_status(interaction: discord.Interaction):
+    """Show user's current subscription status"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get subscription info
+            subscription_info = DiscordMonetizationManager.get_subscription_info(user_id)
+            
+            if not subscription_info['success']:
+                await interaction.response.send_message(f"❌ {subscription_info['error']}", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="💎 Subscription Status",
+                description="Your current subscription and benefits",
+                color=0x9b59b6 if subscription_info['has_subscription'] else 0x95a5a6
+            )
+            
+            if subscription_info['has_subscription']:
+                embed.add_field(name="🎯 Current Tier", value=f"**{subscription_info['tier_name']}**", inline=True)
+                embed.add_field(name="🎰 Casino Bonus", value=f"**+{subscription_info['casino_bonus']}%**", inline=True)
+                embed.add_field(name="📊 Points Earned", value=f"**{subscription_info['points_earned']:,}**", inline=True)
+                embed.add_field(name="📅 Started", value=f"**{subscription_info['started_at'][:10]}**", inline=True)
+                
+                if subscription_info['expires_at']:
+                    embed.add_field(name="⏰ Expires", value=f"**{subscription_info['expires_at'][:10]}**", inline=True)
+                else:
+                    embed.add_field(name="⏰ Expires", value="**Never** (Permanent)", inline=True)
+                
+                embed.add_field(name="💳 Type", value=f"**{subscription_info['subscription_type'].title()}**", inline=True)
+                
+                embed.add_field(
+                    name="🎰 Casino Benefits",
+                    value="You get bonus multipliers on all casino winnings!",
+                    inline=False
+                )
+            else:
+                embed.add_field(name="🎯 Current Tier", value="**Free User**", inline=True)
+                embed.add_field(name="🎰 Casino Bonus", value="**0%**", inline=True)
+                embed.add_field(name="📊 Points Earned", value="**0**", inline=True)
+                
+                embed.add_field(
+                    name="💡 Upgrade Benefits",
+                    value="Subscribe or boost the server to get:\n• +5-15% casino bonuses\n• Exclusive rewards\n• Better odds in games",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="🔗 How to Subscribe",
+                value="• **Server Boosts**: Boost this server\n• **Nitro Gifts**: Gift Nitro to the server\n• **Subscriptions**: Use Discord's subscription feature",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in subscription command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching subscription status.", ephemeral=True)
 
 
 def run_bot():

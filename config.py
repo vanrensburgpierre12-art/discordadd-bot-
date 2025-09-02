@@ -42,6 +42,25 @@ class Config:
     MAX_DEPOSIT = float(os.getenv('MAX_DEPOSIT', 100.00))  # Maximum $100 deposit
     WALLET_BONUS_PERCENTAGE = float(os.getenv('WALLET_BONUS_PERCENTAGE', 0.10))  # 10% bonus on deposits
     
+    # Discord Monetization
+    SERVER_BOOST_REWARDS = {
+        "level_1": {"boosts": 2, "points": 1000, "name": "Level 1 Boost"},
+        "level_2": {"boosts": 7, "points": 2500, "name": "Level 2 Boost"}, 
+        "level_3": {"boosts": 14, "points": 5000, "name": "Level 3 Boost"}
+    }
+    
+    NITRO_GIFT_REWARDS = {
+        "nitro_classic": {"price": 4.99, "points": 5000, "name": "Nitro Classic"},
+        "nitro_full": {"price": 9.99, "points": 10000, "name": "Nitro Full"}
+    }
+    
+    # Server Subscription Tiers
+    SUBSCRIPTION_TIERS = {
+        "basic": {"price": 2.99, "points": 2000, "name": "Basic", "casino_bonus": 0.05},
+        "premium": {"price": 4.99, "points": 4000, "name": "Premium", "casino_bonus": 0.10},
+        "vip": {"price": 9.99, "points": 10000, "name": "VIP", "casino_bonus": 0.15}
+    }
+    
     # Rate Limiting
     EARN_COOLDOWN = int(os.getenv('EARN_COOLDOWN', 300))  # 5 minutes
     CASINO_COOLDOWN = int(os.getenv('CASINO_COOLDOWN', 30))  # 30 seconds between casino games

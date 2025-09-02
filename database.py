@@ -103,6 +103,35 @@ class UserWallet(db.Model):
     def __repr__(self):
         return f'<UserWallet User: {self.user_id}, Deposited: ${self.total_deposited}>'
 
+class UserSubscription(db.Model):
+    __tablename__ = 'user_subscriptions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(20), nullable=False, unique=True)
+    subscription_tier = db.Column(db.String(20), nullable=True)  # 'basic', 'premium', 'vip', None
+    subscription_type = db.Column(db.String(20), nullable=True)  # 'discord_subscription', 'server_boost', 'nitro_gift'
+    points_earned = db.Column(db.Integer, default=0)  # Points earned from this subscription
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=True)  # For time-limited subscriptions
+    is_active = db.Column(db.Boolean, default=True)
+    
+    def __repr__(self):
+        return f'<UserSubscription User: {self.user_id}, Tier: {self.subscription_tier}>'
+
+class DiscordTransaction(db.Model):
+    __tablename__ = 'discord_transactions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(20), nullable=False)
+    transaction_type = db.Column(db.String(20), nullable=False)  # 'server_boost', 'nitro_gift', 'subscription'
+    tier_name = db.Column(db.String(50), nullable=False)
+    points_awarded = db.Column(db.Integer, nullable=False)
+    discord_data = db.Column(db.Text, nullable=True)  # JSON data from Discord
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<DiscordTransaction User: {self.user_id}, Type: {self.transaction_type}>'
+
 def init_db(app):
     """Initialize the database with the Flask app"""
     db.init_app(app)
