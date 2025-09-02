@@ -1,33 +1,45 @@
 # 🎮 Discord Rewards Platform
 
-A comprehensive Discord bot + backend system that rewards users with Roblox gift cards for watching ads and completing offers.
+A comprehensive Discord bot + backend system that rewards users with Roblox gift cards for watching ads, playing casino games, and subscribing to premium tiers.
 
 ## ✨ Features
 
-- **Discord Bot Commands**
-  - `/balance` - Check your points balance
-  - `/earn` - Get a unique offerwall link to earn points
-  - `/redeem` - Redeem points for Roblox gift cards
-  - `/addpoints` - Admin command to manually adjust points
-  - `/leaderboard` - Show top users by points
+### 🎯 **Core Rewards System**
+- **Ad Network Integration** - Personalized offerwall links for each user
+- **Webhook Handling** - Automatic points distribution from ad completions
+- **Gift Card System** - Roblox gift card redemption with secure DM delivery
+- **Rate Limiting** - Prevents spam and ensures fair usage
 
-- **Ad Network Integration**
-  - Personalized offerwall links for each user
-  - Webhook handling for ad completion callbacks
-  - Automatic points distribution
-  - Duplicate prevention and security measures
+### 🎰 **Casino Gaming Platform**
+- **Dice Game** - Roll dice and guess numbers for 5x multiplier
+- **Slot Machine** - Spin reels for matching symbol combinations
+- **Blackjack** - Beat the dealer to 21 with realistic card gameplay
+- **Daily Limits** - Configurable daily win/loss limits
+- **House Edge** - Configurable casino house edge for sustainability
 
-- **Gift Card System**
-  - Roblox gift card redemption
-  - Configurable redemption threshold
-  - Secure code delivery via DM
-  - Gift card inventory management
+### 💳 **Wallet & Payment System**
+- **Cash Deposits** - Add real money to get bonus points
+- **Withdrawal System** - Convert points back to cash via PayPal
+- **Deposit Packages** - Tiered packages with bonus percentages
+- **Transaction History** - Complete transaction tracking and management
 
-- **Security Features**
-  - Rate limiting on earn commands
-  - Webhook signature verification
-  - Duplicate offer completion prevention
-  - Admin-only commands
+### 💎 **Discord Monetization Integration**
+- **Server Boosts** - Reward users for boosting your server
+- **Nitro Gifts** - Points for gifting Nitro to the server
+- **Server Subscriptions** - Monthly subscription tiers with casino bonuses
+- **Tier Benefits** - Higher tiers get better casino odds and exclusive rewards
+
+### 🔧 **Admin Management System**
+- **Web Admin Panel** - Full web interface for transaction management
+- **Pending Approvals** - Review and approve wallet transactions
+- **Server Analytics** - Track server performance and user engagement
+- **Admin Commands** - Discord-based admin tools for quick management
+
+### 🛡️ **Security & Anti-Fraud**
+- **Webhook Signature Verification** - Secure webhook processing
+- **Duplicate Prevention** - Prevents double-spending and fraud
+- **Admin Role Verification** - Secure admin-only commands
+- **Transaction Validation** - Comprehensive input validation
 
 ## 🚀 Quick Start
 
@@ -68,6 +80,32 @@ WEBHOOK_URL=https://your-domain.com/postback
 
 # Offerwall
 OFFERWALL_BASE_URL=https://your-offerwall.com
+
+# Points Configuration
+REDEMPTION_THRESHOLD=1000
+POINTS_PER_AD=20
+
+# Casino Configuration
+CASINO_MIN_BET=10
+CASINO_MAX_BET=500
+CASINO_DAILY_LIMIT=1000
+CASINO_HOUSE_EDGE=0.05
+CASINO_COOLDOWN=30
+
+# Wallet Configuration
+POINTS_PER_DOLLAR=100
+MIN_DEPOSIT=5.00
+MAX_DEPOSIT=100.00
+WALLET_BONUS_PERCENTAGE=0.10
+
+# Rate Limiting
+EARN_COOLDOWN=300
+
+# Flask Configuration
+FLASK_SECRET_KEY=your_flask_secret_key
+FLASK_HOST=0.0.0.0
+FLASK_PORT=5000
+FLASK_DEBUG=False
 ```
 
 ### 4. Run the Platform
@@ -107,21 +145,68 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=21
 
 The bot automatically registers slash commands on startup:
 
-- `/balance` - View your points balance
-- `/earn` - Get offerwall link to earn points
-- `/redeem` - Redeem points for gift card
-- `/leaderboard` - View top users
-- `/addpoints <user> <amount>` - Admin command
+#### 🎯 **Main Commands**
+- `/balance` - Check your current points balance
+- `/earn` - Get a link to earn points by watching ads
+- `/redeem` - Redeem points for a Roblox gift card
+
+#### 🎰 **Casino Commands**
+- `/casino` - View casino information and daily limits
+- `/dice <bet> <guess>` - Roll the dice and guess the number (1-6)
+- `/slots <bet>` - Spin the slot machine
+- `/blackjack <bet>` - Play a game of blackjack
+
+#### 💳 **Wallet Commands**
+- `/wallet` - View your wallet information and deposit packages
+- `/deposit` - Get deposit packages and payment information
+- `/withdraw <amount_usd>` - Request a withdrawal (convert points to cash)
+
+#### 💎 **Subscription Commands**
+- `/tiers` - View available subscription tiers and their benefits
+- `/subscription` - View your current subscription status and benefits
+
+#### 🔧 **Admin Commands**
+- `/admin-pending` - View pending transactions requiring approval (Admin only)
+- `/admin-panel` - Get link to web admin panel (Admin only)
+- `/admin-servers` - View server statistics (Admin only)
 
 ## 🌐 Backend API
 
 ### Endpoints
 
+#### 🏠 **Public Endpoints**
 - `GET /` - Home page with platform info
-- `GET /health` - Health check
+- `GET /health` - Health check endpoint
 - `GET /stats` - Platform statistics
+
+#### 🎯 **Rewards System**
 - `POST /postback` - Webhook for ad networks
 - `GET /postback` - Webhook test interface
+
+#### 💳 **Wallet System**
+- `GET /wallet` - Wallet management interface
+- `POST /wallet/deposit` - Process deposit transactions
+- `POST /wallet/withdraw` - Process withdrawal requests
+- `GET /wallet/transactions` - Get transaction history
+
+#### 🎰 **Casino System**
+- `GET /casino` - Casino game interface
+- `POST /casino/dice` - Process dice game
+- `POST /casino/slots` - Process slots game
+- `POST /casino/blackjack` - Process blackjack game
+
+#### 💎 **Discord Monetization**
+- `POST /discord/boost` - Handle server boost rewards
+- `POST /discord/nitro` - Handle Nitro gift rewards
+- `POST /discord/subscription` - Handle subscription rewards
+
+#### 🔧 **Admin Panel**
+- `GET /admin` - Admin panel interface
+- `GET /admin/transactions` - View pending transactions
+- `POST /admin/approve` - Approve transactions
+- `POST /admin/reject` - Reject transactions
+- `GET /admin/servers` - Server analytics
+- `GET /admin/users` - User management
 
 ### Webhook Format
 
@@ -145,7 +230,7 @@ curl -X POST http://localhost:5000/postback \
 
 ## 🗄️ Database Schema
 
-### Users Table
+### 👤 **Users Table**
 - `id` - Discord user ID (primary key)
 - `username` - Discord username
 - `points_balance` - Current points balance
@@ -153,7 +238,7 @@ curl -X POST http://localhost:5000/postback \
 - `created_at` - Account creation timestamp
 - `last_earn_time` - Last earn command usage
 
-### Gift Cards Table
+### 🎫 **Gift Cards Table**
 - `id` - Auto-increment ID
 - `code` - Gift card code (unique)
 - `amount` - Robux amount
@@ -161,13 +246,74 @@ curl -X POST http://localhost:5000/postback \
 - `used_by` - Discord user ID who redeemed it
 - `used_at` - Redemption timestamp
 
-### Ad Completions Table
+### 📺 **Ad Completions Table**
 - `id` - Auto-increment ID
 - `user_id` - Discord user ID
 - `offer_id` - Unique offer identifier
 - `points_earned` - Points awarded
 - `completed_at` - Completion timestamp
 - `ip_address` - IP address for security
+
+### 🎰 **Casino Tables**
+#### Daily Casino Limits
+- `id` - Auto-increment ID
+- `user_id` - Discord user ID
+- `date` - Date of the limit
+- `total_won` - Total points won today
+- `total_lost` - Total points lost today
+- `games_played` - Number of games played today
+
+### 💳 **Wallet Tables**
+#### User Wallets
+- `id` - Auto-increment ID
+- `user_id` - Discord user ID
+- `total_deposited` - Total cash deposited
+- `total_withdrawn` - Total cash withdrawn
+- `lifetime_bonus` - Total bonus points earned
+- `created_at` - Wallet creation timestamp
+
+#### Wallet Transactions
+- `id` - Auto-increment ID
+- `user_id` - Discord user ID
+- `transaction_type` - 'deposit' or 'withdrawal'
+- `amount_usd` - Cash amount
+- `points_amount` - Points amount
+- `status` - 'pending', 'completed', 'rejected'
+- `created_at` - Transaction timestamp
+
+### 💎 **Discord Monetization Tables**
+#### User Subscriptions
+- `id` - Auto-increment ID
+- `user_id` - Discord user ID
+- `subscription_type` - 'boost', 'nitro', 'subscription'
+- `tier_name` - Subscription tier name
+- `points_awarded` - Points awarded for subscription
+- `casino_bonus` - Casino bonus multiplier
+- `started_at` - Subscription start date
+- `expires_at` - Subscription expiration date
+
+#### Discord Transactions
+- `id` - Auto-increment ID
+- `user_id` - Discord user ID
+- `transaction_type` - Type of Discord transaction
+- `tier_name` - Subscription tier
+- `points_awarded` - Points awarded
+- `processed_at` - Processing timestamp
+
+### 🏢 **Server Management Tables**
+#### Servers
+- `id` - Discord server ID
+- `server_name` - Server name
+- `owner_id` - Server owner Discord ID
+- `is_active` - Whether bot is still in server
+- `created_at` - Server registration timestamp
+- `last_activity` - Last activity timestamp
+
+#### Admin Users
+- `id` - Auto-increment ID
+- `user_id` - Discord user ID
+- `admin_level` - Admin permission level
+- `created_at` - Admin assignment timestamp
 
 ## 🚀 Deployment
 
@@ -330,6 +476,44 @@ curl -X POST http://localhost:5000/postback \
 3. Test complete user flow
 4. Verify points and redemptions
 
+## 🎮 **New Features Guide**
+
+### 🎰 **Casino System**
+The casino system includes three games with configurable odds and daily limits:
+
+- **Dice Game**: Guess 1-6, win 5x your bet if correct
+- **Slot Machine**: Match symbols for various multipliers
+- **Blackjack**: Beat the dealer to 21 with realistic gameplay
+
+**Casino Configuration:**
+- Set `CASINO_DAILY_LIMIT` to control max daily wins/losses
+- Adjust `CASINO_HOUSE_EDGE` for sustainability (default 5%)
+- Configure `CASINO_COOLDOWN` between games (default 30 seconds)
+
+### 💳 **Wallet System**
+Users can deposit real money and withdraw points as cash:
+
+- **Deposits**: Add cash via Stripe/PayPal for bonus points
+- **Withdrawals**: Convert points to cash via PayPal
+- **Packages**: Tiered deposit packages with bonus percentages
+- **Admin Approval**: All withdrawals require admin approval
+
+### 💎 **Discord Monetization**
+Integrate with Discord's monetization features:
+
+- **Server Boosts**: Reward users for boosting your server
+- **Nitro Gifts**: Points for gifting Nitro to the server
+- **Subscriptions**: Monthly tiers with casino bonuses
+- **Tier Benefits**: Higher tiers get better casino odds
+
+### 🔧 **Admin Panel**
+Full web-based admin interface for managing the platform:
+
+- **Transaction Management**: Approve/reject wallet transactions
+- **Server Analytics**: Track server performance and engagement
+- **User Management**: View user statistics and activity
+- **System Monitoring**: Health checks and performance metrics
+
 ## 🚨 Troubleshooting
 
 ### Common Issues
@@ -338,27 +522,49 @@ curl -X POST http://localhost:5000/postback \
    - Check bot token
    - Verify bot permissions
    - Check intents configuration
+   - Run `python3 force_sync.py` to sync commands
 
-2. **Database errors**
+2. **Commands not visible**
+   - Run the command sync script: `python3 force_sync.py`
+   - Restart the bot: `./restart_bot.sh`
+   - Check Discord permissions and bot role
+
+3. **Database errors**
    - Verify database file permissions
-   - Check SQLite installation
-   - Review database schema
+   - Check PostgreSQL connection
+   - Review database schema migrations
 
-3. **Webhook not working**
+4. **Webhook not working**
    - Check webhook URL
    - Verify signature verification
    - Check firewall settings
 
-4. **Points not updating**
+5. **Points not updating**
    - Check webhook logs
    - Verify user exists in database
    - Check offer completion tracking
+
+6. **Casino games not working**
+   - Check daily limits configuration
+   - Verify user has sufficient points
+   - Check cooldown settings
+
+7. **Wallet transactions failing**
+   - Check payment processor configuration
+   - Verify admin approval workflow
+   - Check transaction status in admin panel
 
 ### Debug Mode
 ```bash
 # Enable debug logging
 export FLASK_DEBUG=True
 python main.py
+
+# Check bot logs
+docker-compose logs -f rewards-platform
+
+# Force command sync
+python3 force_sync.py
 ```
 
 ## 📈 Scaling Considerations
@@ -378,6 +584,60 @@ python main.py
 - Implement alerting
 - Performance monitoring
 
+## 🛠️ **Utility Scripts**
+
+The platform includes several utility scripts for maintenance and troubleshooting:
+
+### 🔄 **Command Sync Script**
+```bash
+# Force sync Discord slash commands
+python3 force_sync.py
+```
+Use this when commands aren't visible in Discord.
+
+### 🔄 **Bot Restart Script**
+```bash
+# Restart the entire bot with clean build
+./restart_bot.sh
+```
+Use this for a complete bot restart with fresh command registration.
+
+### 🧪 **Test Scripts**
+```bash
+# Test webhook functionality
+python3 test_webhook.py
+
+# Test individual components
+python3 -c "from casino_games import DiceGame; print('Casino games working!')"
+```
+
+## 🎯 **Quick Commands Reference**
+
+### For Users:
+- `/balance` - Check points
+- `/earn` - Get ad links
+- `/casino` - Play games
+- `/wallet` - Manage money
+- `/tiers` - View subscriptions
+
+### For Admins:
+- `/admin-panel` - Web admin interface
+- `/admin-pending` - Review transactions
+- `/admin-servers` - Server stats
+
+## 🚀 **Getting Started Checklist**
+
+- [ ] Set up Discord bot and get token
+- [ ] Configure environment variables
+- [ ] Set up database (PostgreSQL recommended)
+- [ ] Configure webhook URL
+- [ ] Set up payment processors (Stripe/PayPal)
+- [ ] Add gift card inventory
+- [ ] Test all commands and features
+- [ ] Set up admin users
+- [ ] Configure server boost rewards
+- [ ] Deploy to production
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -396,7 +656,10 @@ For support and questions:
 - Create an issue on GitHub
 - Check the troubleshooting section
 - Review the logs for errors
+- Use the utility scripts for common issues
 
 ---
 
 **Happy Rewarding! 🎉**
+
+*Complete Gaming Platform with Casino, Wallet, and Discord Monetization*
