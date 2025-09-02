@@ -6,7 +6,11 @@ from datetime import datetime, timedelta
 
 from config import Config
 from flask_app import app  # import Flask app for context
-from database import db, User, GiftCard
+from database import db, User, GiftCard, DailyCasinoLimit, UserWallet, UserSubscription, Server, AdminUser
+from casino_games import DiceGame, SlotsGame, BlackjackGame
+from wallet_manager import WalletManager
+from discord_monetization import DiscordMonetizationManager
+from admin_manager import AdminManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +29,72 @@ class RewardsBot(commands.Bot):
 
     async def on_ready(self):
         logger.info(f"{self.user} has connected to Discord!")
-        await self.change_presence(activity=discord.Game(name="/earn to watch ads!"))
+        await self.change_presence(activity=discord.Game(name="/earn | /casino | /wallet | /tiers - Complete Gaming Platform!"))
+        
+        # Register all servers the bot is in
+        for guild in self.guilds:
+            try:
+                with app.app_context():
+                    result = AdminManager.register_server(
+                        str(guild.id),
+                        guild.name,
+                        str(guild.owner_id)
+                    )
+                    if result['success']:
+                        logger.info(f"Registered server: {guild.name} ({guild.id})")
+            except Exception as e:
+                logger.error(f"Error registering server {guild.name}: {e}")
+
+    async def on_guild_join(self, guild):
+        """Handle bot being added to a new server"""
+        try:
+            with app.app_context():
+                result = AdminManager.register_server(
+                    str(guild.id),
+                    guild.name,
+                    str(guild.owner_id)
+                )
+                if result['success']:
+                    logger.info(f"Bot added to new server: {guild.name} ({guild.id})")
+                    
+                    # Send welcome message to server owner
+                    try:
+                        owner = guild.owner
+                        if owner:
+                            embed = discord.Embed(
+                                title="🎮 Welcome to Rewards Platform!",
+                                description="Thanks for adding me to your server!",
+                                color=0x00ff00
+                            )
+                            embed.add_field(
+                                name="🚀 Getting Started",
+                                value="• Use `/earn` to get ad links\n• Use `/casino` to play games\n• Use `/tiers` to see subscription benefits",
+                                inline=False
+                            )
+                            embed.add_field(
+                                name="💡 Features",
+                                value="• Watch ads for points\n• Play casino games\n• Subscribe for better odds\n• Redeem points for gift cards",
+                                inline=False
+                            )
+                            embed.set_footer(text="Use /help for more commands!")
+                            await owner.send(embed=embed)
+                    except Exception as e:
+                        logger.error(f"Error sending welcome message: {e}")
+        except Exception as e:
+            logger.error(f"Error handling guild join: {e}")
+
+    async def on_guild_remove(self, guild):
+        """Handle bot being removed from a server"""
+        try:
+            with app.app_context():
+                server = Server.query.filter_by(id=str(guild.id)).first()
+                if server:
+                    server.is_active = False
+                    server.last_activity = datetime.utcnow()
+                    db.session.commit()
+                    logger.info(f"Bot removed from server: {guild.name} ({guild.id})")
+        except Exception as e:
+            logger.error(f"Error handling guild remove: {e}")
 
 bot = RewardsBot()
 
@@ -178,6 +247,731 @@ async def redeem(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Error in redeem command: {e}")
         await interaction.response.send_message("❌ An error occurred while processing your redemption.", ephemeral=True)
+
+
+@bot.tree.command(name="dice", description="Roll the dice and guess the number (1-6)")
+async def dice(interaction: discord.Interaction, bet: int, guess: int):
+    """Play dice game"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Check cooldown
+            if user.last_earn_time and datetime.utcnow() - user.last_earn_time < timedelta(seconds=Config.CASINO_COOLDOWN):
+                remaining_time = Config.CASINO_COOLDOWN - (datetime.utcnow() - user.last_earn_time).seconds
+                await interaction.response.send_message(
+                    f"⏰ Please wait **{remaining_time} seconds** before playing again.",
+                    ephemeral=True
+                )
+                return
+
+            # Play dice game
+            result = DiceGame.play(user_id, bet, guess)
+            
+            if not result["success"]:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+
+            # Update last activity time
+            user.last_earn_time = datetime.utcnow()
+            db.session.commit()
+
+            # Create embed
+            embed = discord.Embed(
+                title="🎲 Dice Game Result",
+                description=result["result_text"],
+                color=0x00ff00 if result["win_amount"] > 0 else 0xff0000
+            )
+            embed.add_field(name="Your Guess", value=f"**{result['guess']}**", inline=True)
+            embed.add_field(name="Dice Roll", value=f"**{result['dice_roll']}**", inline=True)
+            embed.add_field(name="Bet Amount", value=f"**{result['bet_amount']:,}** points", inline=True)
+            embed.add_field(name="Winnings", value=f"**{result['win_amount']:,}** points", inline=True)
+            embed.add_field(name="New Balance", value=f"**{result['new_balance']:,}** points", inline=True)
+            
+            # Add daily limit info
+            daily_limit = DailyCasinoLimit.query.filter_by(
+                user_id=user_id, 
+                date=datetime.utcnow().date()
+            ).first()
+            if daily_limit:
+                net_result = daily_limit.total_won - daily_limit.total_lost
+                embed.add_field(name="Daily Casino Result", value=f"**{net_result:+,}** points", inline=True)
+
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed)
+
+    except Exception as e:
+        logger.error(f"Error in dice command: {e}")
+        await interaction.response.send_message("❌ An error occurred while playing dice.", ephemeral=True)
+
+
+@bot.tree.command(name="slots", description="Spin the slot machine")
+async def slots(interaction: discord.Interaction, bet: int):
+    """Play slots game"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Check cooldown
+            if user.last_earn_time and datetime.utcnow() - user.last_earn_time < timedelta(seconds=Config.CASINO_COOLDOWN):
+                remaining_time = Config.CASINO_COOLDOWN - (datetime.utcnow() - user.last_earn_time).seconds
+                await interaction.response.send_message(
+                    f"⏰ Please wait **{remaining_time} seconds** before playing again.",
+                    ephemeral=True
+                )
+                return
+
+            # Play slots game
+            result = SlotsGame.play(user_id, bet)
+            
+            if not result["success"]:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+
+            # Update last activity time
+            user.last_earn_time = datetime.utcnow()
+            db.session.commit()
+
+            # Create embed
+            embed = discord.Embed(
+                title="🎰 Slot Machine Result",
+                description=result["result_text"],
+                color=0x00ff00 if result["win_amount"] > 0 else 0xff0000
+            )
+            embed.add_field(name="Reels", value=f"**{result['reels'][0]} {result['reels'][1]} {result['reels'][2]}**", inline=True)
+            embed.add_field(name="Bet Amount", value=f"**{result['bet_amount']:,}** points", inline=True)
+            embed.add_field(name="Winnings", value=f"**{result['win_amount']:,}** points", inline=True)
+            embed.add_field(name="New Balance", value=f"**{result['new_balance']:,}** points", inline=True)
+            
+            # Add daily limit info
+            daily_limit = DailyCasinoLimit.query.filter_by(
+                user_id=user_id, 
+                date=datetime.utcnow().date()
+            ).first()
+            if daily_limit:
+                net_result = daily_limit.total_won - daily_limit.total_lost
+                embed.add_field(name="Daily Casino Result", value=f"**{net_result:+,}** points", inline=True)
+
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed)
+
+    except Exception as e:
+        logger.error(f"Error in slots command: {e}")
+        await interaction.response.send_message("❌ An error occurred while playing slots.", ephemeral=True)
+
+
+@bot.tree.command(name="blackjack", description="Play a game of blackjack")
+async def blackjack(interaction: discord.Interaction, bet: int):
+    """Play blackjack game"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Check cooldown
+            if user.last_earn_time and datetime.utcnow() - user.last_earn_time < timedelta(seconds=Config.CASINO_COOLDOWN):
+                remaining_time = Config.CASINO_COOLDOWN - (datetime.utcnow() - user.last_earn_time).seconds
+                await interaction.response.send_message(
+                    f"⏰ Please wait **{remaining_time} seconds** before playing again.",
+                    ephemeral=True
+                )
+                return
+
+            # Play blackjack game
+            result = BlackjackGame.play(user_id, bet)
+            
+            if not result["success"]:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+
+            # Update last activity time
+            user.last_earn_time = datetime.utcnow()
+            db.session.commit()
+
+            # Create embed
+            embed = discord.Embed(
+                title="🃏 Blackjack Result",
+                description=result["result_text"],
+                color=0x00ff00 if result["win_amount"] > 0 else 0xff0000
+            )
+            embed.add_field(name="Your Cards", value=f"**{result['player_cards']}** ({result['player_score']})", inline=True)
+            embed.add_field(name="Dealer Cards", value=f"**{result['dealer_cards']}** ({result['dealer_score']})", inline=True)
+            embed.add_field(name="Bet Amount", value=f"**{result['bet_amount']:,}** points", inline=True)
+            embed.add_field(name="Winnings", value=f"**{result['win_amount']:,}** points", inline=True)
+            embed.add_field(name="New Balance", value=f"**{result['new_balance']:,}** points", inline=True)
+            
+            # Add daily limit info
+            daily_limit = DailyCasinoLimit.query.filter_by(
+                user_id=user_id, 
+                date=datetime.utcnow().date()
+            ).first()
+            if daily_limit:
+                net_result = daily_limit.total_won - daily_limit.total_lost
+                embed.add_field(name="Daily Casino Result", value=f"**{net_result:+,}** points", inline=True)
+
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed)
+
+    except Exception as e:
+        logger.error(f"Error in blackjack command: {e}")
+        await interaction.response.send_message("❌ An error occurred while playing blackjack.", ephemeral=True)
+
+
+@bot.tree.command(name="casino", description="View casino information and daily limits")
+async def casino_info(interaction: discord.Interaction):
+    """Show casino information and user's daily limits"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get daily limit info
+            daily_limit = DailyCasinoLimit.query.filter_by(
+                user_id=user_id, 
+                date=datetime.utcnow().date()
+            ).first()
+
+            embed = discord.Embed(
+                title="🎰 Casino Information",
+                description="Welcome to the Rewards Casino! Try your luck with our games.",
+                color=0x0099ff
+            )
+            
+            embed.add_field(name="🎲 Dice Game", value=f"Guess 1-6, win 5x your bet if correct!\nMin bet: {Config.CASINO_MIN_BET}, Max bet: {Config.CASINO_MAX_BET}", inline=False)
+            embed.add_field(name="🎰 Slot Machine", value=f"Spin for matching symbols!\nMin bet: {Config.CASINO_MIN_BET}, Max bet: {Config.CASINO_MAX_BET}", inline=False)
+            embed.add_field(name="🃏 Blackjack", value=f"Beat the dealer to 21!\nMin bet: {Config.CASINO_MIN_BET}, Max bet: {Config.CASINO_MAX_BET}", inline=False)
+            
+            embed.add_field(name="💰 Your Balance", value=f"**{user.points_balance:,}** points", inline=True)
+            embed.add_field(name="⏰ Cooldown", value=f"**{Config.CASINO_COOLDOWN}** seconds", inline=True)
+            embed.add_field(name="📊 Daily Limit", value=f"**{Config.CASINO_DAILY_LIMIT:,}** points", inline=True)
+            
+            if daily_limit:
+                net_result = daily_limit.total_won - daily_limit.total_lost
+                embed.add_field(name="📈 Today's Result", value=f"**{net_result:+,}** points", inline=True)
+                embed.add_field(name="🎮 Games Played", value=f"**{daily_limit.games_played}**", inline=True)
+                remaining = Config.CASINO_DAILY_LIMIT - abs(net_result)
+                embed.add_field(name="🎯 Remaining", value=f"**{remaining:,}** points", inline=True)
+            else:
+                embed.add_field(name="📈 Today's Result", value="**0** points", inline=True)
+                embed.add_field(name="🎮 Games Played", value="**0**", inline=True)
+                embed.add_field(name="🎯 Remaining", value=f"**{Config.CASINO_DAILY_LIMIT:,}** points", inline=True)
+
+            embed.set_footer(text="Use /dice, /slots, or /blackjack to play!")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in casino command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching casino information.", ephemeral=True)
+
+
+@bot.tree.command(name="wallet", description="View your wallet information and deposit packages")
+async def wallet_info(interaction: discord.Interaction):
+    """Show wallet information and deposit packages"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get wallet info
+            wallet_info = WalletManager.get_wallet_info(user_id)
+            if not wallet_info['success']:
+                await interaction.response.send_message(f"❌ {wallet_info['error']}", ephemeral=True)
+                return
+
+            # Get deposit packages
+            packages_info = WalletManager.get_deposit_packages()
+            
+            embed = discord.Embed(
+                title="💳 Wallet Information",
+                description="Manage your cash deposits and point balance",
+                color=0x0099ff
+            )
+            
+            # Wallet stats
+            wallet = wallet_info['wallet']
+            embed.add_field(name="💰 Current Balance", value=f"**{user.points_balance:,}** points", inline=True)
+            embed.add_field(name="💵 Total Deposited", value=f"**${wallet['total_deposited']:.2f}**", inline=True)
+            embed.add_field(name="🎁 Lifetime Bonus", value=f"**{wallet['lifetime_bonus']:,}** points", inline=True)
+            
+            # Recent transactions
+            recent_txns = wallet_info['recent_transactions'][:3]  # Show last 3
+            if recent_txns:
+                txn_text = ""
+                for txn in recent_txns:
+                    status_emoji = "✅" if txn['status'] == 'completed' else "⏳" if txn['status'] == 'pending' else "❌"
+                    txn_text += f"{status_emoji} ${txn['amount_usd']:.2f} ({txn['points_amount']:+,} pts)\n"
+                embed.add_field(name="📋 Recent Transactions", value=txn_text or "None", inline=False)
+            
+            # Deposit packages
+            packages_text = ""
+            for pkg in packages_info['packages'][:3]:  # Show first 3 packages
+                packages_text += f"**${pkg['amount_usd']}** → {pkg['total_points']:,} pts (+{pkg['bonus_percentage']:.0f}% bonus)\n"
+            
+            embed.add_field(name="💎 Deposit Packages", value=packages_text, inline=False)
+            embed.add_field(name="🔗 Deposit Link", value=f"[Add Funds]({Config.WEBHOOK_URL.replace('/postback', '/wallet')})", inline=True)
+            embed.add_field(name="📊 Exchange Rate", value=f"**{Config.POINTS_PER_DOLLAR}** pts/$1", inline=True)
+            embed.add_field(name="🎁 Bonus", value=f"**+{Config.WALLET_BONUS_PERCENTAGE*100:.0f}%** on deposits", inline=True)
+            
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in wallet command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching wallet information.", ephemeral=True)
+
+
+@bot.tree.command(name="deposit", description="Get deposit packages and payment information")
+async def deposit_info(interaction: discord.Interaction):
+    """Show deposit packages and payment options"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get deposit packages
+            packages_info = WalletManager.get_deposit_packages()
+            
+            embed = discord.Embed(
+                title="💳 Deposit Packages",
+                description="Add cash to your wallet and get bonus points!",
+                color=0x00ff00
+            )
+            
+            # Show all packages
+            for pkg in packages_info['packages']:
+                embed.add_field(
+                    name=f"💎 ${pkg['amount_usd']} Package",
+                    value=f"**{pkg['total_points']:,}** points\n({pkg['base_points']:,} base + {pkg['bonus_points']:,} bonus)\n**+{pkg['bonus_percentage']:.0f}%** bonus",
+                    inline=True
+                )
+            
+            embed.add_field(name="💰 Current Balance", value=f"**{user.points_balance:,}** points", inline=False)
+            embed.add_field(name="🔗 Payment Link", value=f"[Add Funds Now]({Config.WEBHOOK_URL.replace('/postback', '/wallet')})", inline=True)
+            embed.add_field(name="💳 Payment Methods", value="Stripe, PayPal, Crypto", inline=True)
+            embed.add_field(name="⚡ Processing", value="Instant", inline=True)
+            
+            embed.set_footer(text="Deposits are processed instantly with bonus points!")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in deposit command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching deposit information.", ephemeral=True)
+
+
+@bot.tree.command(name="withdraw", description="Request a withdrawal (convert points to cash)")
+async def withdraw_request(interaction: discord.Interaction, amount_usd: float):
+    """Request a withdrawal of points to cash"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Create withdrawal request
+            result = WalletManager.create_withdrawal_request(user_id, amount_usd)
+            
+            if not result['success']:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+
+            embed = discord.Embed(
+                title="💸 Withdrawal Request",
+                description="Your withdrawal request has been submitted for review",
+                color=0xffa500
+            )
+            
+            embed.add_field(name="💰 Amount Requested", value=f"**${amount_usd:.2f}**", inline=True)
+            embed.add_field(name="🎯 Points Deducted", value=f"**{result['points_deducted']:,}**", inline=True)
+            embed.add_field(name="📊 New Balance", value=f"**{user.points_balance:,}** points", inline=True)
+            embed.add_field(name="📋 Transaction ID", value=f"**#{result['transaction_id']}**", inline=True)
+            embed.add_field(name="⏳ Status", value="**Pending Review**", inline=True)
+            embed.add_field(name="💳 Payment Method", value="PayPal", inline=True)
+            
+            embed.add_field(
+                name="ℹ️ Processing Info", 
+                value="Withdrawals are reviewed within 24 hours. You'll receive payment via PayPal once approved.",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in withdraw command: {e}")
+        await interaction.response.send_message("❌ An error occurred while processing withdrawal request.", ephemeral=True)
+
+
+@bot.tree.command(name="tiers", description="View available subscription tiers and their benefits")
+async def subscription_tiers(interaction: discord.Interaction):
+    """Show available subscription tiers and benefits"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get user's current subscription
+            subscription_info = DiscordMonetizationManager.get_subscription_info(user_id)
+            tiers_info = DiscordMonetizationManager.get_available_tiers()
+            
+            embed = discord.Embed(
+                title="💎 Subscription Tiers & Benefits",
+                description="Unlock better casino odds and exclusive rewards!",
+                color=0x9b59b6
+            )
+            
+            # Current subscription status
+            if subscription_info['has_subscription']:
+                embed.add_field(
+                    name="🎯 Your Current Tier",
+                    value=f"**{subscription_info['tier_name']}**\n+{subscription_info['casino_bonus']}% casino bonus\nExpires: {subscription_info['expires_at'][:10] if subscription_info['expires_at'] else 'Never'}",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="🎯 Your Current Tier",
+                    value="**Free User**\nNo casino bonuses",
+                    inline=False
+                )
+            
+            # Server Boost tiers
+            embed.add_field(
+                name="🚀 Server Boosts",
+                value="Boost this server for points and casino bonuses!",
+                inline=False
+            )
+            
+            for tier_key, tier_info in Config.SERVER_BOOST_REWARDS.items():
+                casino_bonus = Config.SUBSCRIPTION_TIERS.get(tier_key, {}).get('casino_bonus', 0) * 100
+                embed.add_field(
+                    name=f"🔹 {tier_info['name']}",
+                    value=f"**{tier_info['boosts']}** boosts → **{tier_info['points']:,}** points\n+{casino_bonus}% casino bonus",
+                    inline=True
+                )
+            
+            # Nitro Gift tiers
+            embed.add_field(
+                name="💳 Nitro Gifts",
+                value="Gift Nitro to get points and temporary bonuses!",
+                inline=False
+            )
+            
+            for nitro_key, nitro_info in Config.NITRO_GIFT_REWARDS.items():
+                embed.add_field(
+                    name=f"🔹 {nitro_info['name']}",
+                    value=f"**${nitro_info['price']}** → **{nitro_info['points']:,}** points\n30-day bonus period",
+                    inline=True
+                )
+            
+            # Subscription tiers
+            embed.add_field(
+                name="⭐ Server Subscriptions",
+                value="Subscribe monthly for consistent bonuses!",
+                inline=False
+            )
+            
+            for sub_key, sub_info in Config.SUBSCRIPTION_TIERS.items():
+                embed.add_field(
+                    name=f"🔹 {sub_info['name']}",
+                    value=f"**${sub_info['price']}/month** → **{sub_info['points']:,}** points\n+{sub_info['casino_bonus']*100}% casino bonus",
+                    inline=True
+                )
+            
+            embed.add_field(
+                name="🎰 Casino Benefits",
+                value="Higher tiers = Better odds in all casino games!",
+                inline=False
+            )
+            
+            embed.set_footer(text="Use Discord's built-in features to subscribe and get rewards!")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in tiers command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching tier information.", ephemeral=True)
+
+
+@bot.tree.command(name="subscription", description="View your current subscription status and benefits")
+async def subscription_status(interaction: discord.Interaction):
+    """Show user's current subscription status"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            user = User.query.filter_by(id=user_id).first()
+
+            if not user:
+                await interaction.response.send_message("❌ You don't have an account yet. Use `/earn` first!", ephemeral=True)
+                return
+
+            # Get subscription info
+            subscription_info = DiscordMonetizationManager.get_subscription_info(user_id)
+            
+            if not subscription_info['success']:
+                await interaction.response.send_message(f"❌ {subscription_info['error']}", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="💎 Subscription Status",
+                description="Your current subscription and benefits",
+                color=0x9b59b6 if subscription_info['has_subscription'] else 0x95a5a6
+            )
+            
+            if subscription_info['has_subscription']:
+                embed.add_field(name="🎯 Current Tier", value=f"**{subscription_info['tier_name']}**", inline=True)
+                embed.add_field(name="🎰 Casino Bonus", value=f"**+{subscription_info['casino_bonus']}%**", inline=True)
+                embed.add_field(name="📊 Points Earned", value=f"**{subscription_info['points_earned']:,}**", inline=True)
+                embed.add_field(name="📅 Started", value=f"**{subscription_info['started_at'][:10]}**", inline=True)
+                
+                if subscription_info['expires_at']:
+                    embed.add_field(name="⏰ Expires", value=f"**{subscription_info['expires_at'][:10]}**", inline=True)
+                else:
+                    embed.add_field(name="⏰ Expires", value="**Never** (Permanent)", inline=True)
+                
+                embed.add_field(name="💳 Type", value=f"**{subscription_info['subscription_type'].title()}**", inline=True)
+                
+                embed.add_field(
+                    name="🎰 Casino Benefits",
+                    value="You get bonus multipliers on all casino winnings!",
+                    inline=False
+                )
+            else:
+                embed.add_field(name="🎯 Current Tier", value="**Free User**", inline=True)
+                embed.add_field(name="🎰 Casino Bonus", value="**0%**", inline=True)
+                embed.add_field(name="📊 Points Earned", value="**0**", inline=True)
+                
+                embed.add_field(
+                    name="💡 Upgrade Benefits",
+                    value="Subscribe or boost the server to get:\n• +5-15% casino bonuses\n• Exclusive rewards\n• Better odds in games",
+                    inline=False
+                )
+            
+            embed.add_field(
+                name="🔗 How to Subscribe",
+                value="• **Server Boosts**: Boost this server\n• **Nitro Gifts**: Gift Nitro to the server\n• **Subscriptions**: Use Discord's subscription feature",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"User ID: {user_id}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in subscription command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching subscription status.", ephemeral=True)
+
+
+@bot.tree.command(name="admin-pending", description="View pending transactions requiring approval (Admin only)")
+async def admin_pending_transactions(interaction: discord.Interaction):
+    """Show pending transactions for admin approval"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            
+            # Check if user is admin
+            if not AdminManager.is_admin(user_id):
+                await interaction.response.send_message("❌ You don't have admin permissions!", ephemeral=True)
+                return
+            
+            # Get pending transactions
+            result = AdminManager.get_pending_transactions(limit=10)
+            
+            if not result['success']:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="⏳ Pending Transactions",
+                description="Transactions awaiting approval",
+                color=0xffa500
+            )
+            
+            # Show wallet transactions
+            if result['wallet_transactions']:
+                wallet_text = ""
+                for txn in result['wallet_transactions'][:5]:  # Show first 5
+                    wallet_text += f"**#{txn['id']}** {txn['username']} - ${txn['amount_usd']:.2f} ({txn['points_amount']:+,} pts)\n"
+                embed.add_field(name="💳 Wallet Transactions", value=wallet_text or "None", inline=False)
+            
+            # Show Discord transactions
+            if result['discord_transactions']:
+                discord_text = ""
+                for txn in result['discord_transactions'][:5]:  # Show first 5
+                    discord_text += f"**#{txn['id']}** {txn['username']} - {txn['tier_name']} ({txn['points_awarded']:+,} pts)\n"
+                embed.add_field(name="🎮 Discord Transactions", value=discord_text or "None", inline=False)
+            
+            if result['total_pending'] == 0:
+                embed.add_field(name="✅ Status", value="No pending transactions", inline=False)
+            else:
+                embed.add_field(name="📊 Total Pending", value=f"**{result['total_pending']}** transactions", inline=False)
+            
+            embed.add_field(
+                name="🔧 Admin Actions",
+                value="Use the web admin panel to approve/reject transactions:\n`/admin-panel` for the link",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Admin: {interaction.user.display_name}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in admin-pending command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching pending transactions.", ephemeral=True)
+
+
+@bot.tree.command(name="admin-panel", description="Get link to web admin panel (Admin only)")
+async def admin_panel_link(interaction: discord.Interaction):
+    """Provide link to web admin panel"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            
+            # Check if user is admin
+            if not AdminManager.is_admin(user_id):
+                await interaction.response.send_message("❌ You don't have admin permissions!", ephemeral=True)
+                return
+            
+            admin_level = AdminManager.get_admin_level(user_id)
+            
+            embed = discord.Embed(
+                title="🔧 Admin Panel",
+                description="Access the web-based admin panel",
+                color=0x9b59b6
+            )
+            
+            embed.add_field(
+                name="🌐 Web Admin Panel",
+                value=f"[Open Admin Panel]({Config.WEBHOOK_URL.replace('/postback', '/admin')})",
+                inline=False
+            )
+            
+            embed.add_field(name="👤 Your Level", value=f"**{admin_level.title()}**", inline=True)
+            embed.add_field(name="🔑 Permissions", value="Full admin access", inline=True)
+            
+            embed.add_field(
+                name="📋 Available Actions",
+                value="• View pending transactions\n• Approve/reject transactions\n• Manage servers\n• View analytics\n• Add/remove admins",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="⚠️ Security Note",
+                value="Keep your admin credentials secure. Only share with trusted team members.",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Admin: {interaction.user.display_name}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in admin-panel command: {e}")
+        await interaction.response.send_message("❌ An error occurred while generating admin panel link.", ephemeral=True)
+
+
+@bot.tree.command(name="admin-servers", description="View server statistics (Admin only)")
+async def admin_server_stats(interaction: discord.Interaction):
+    """Show server statistics for admins"""
+    try:
+        with app.app_context():
+            user_id = str(interaction.user.id)
+            
+            # Check if user is admin
+            if not AdminManager.is_admin(user_id):
+                await interaction.response.send_message("❌ You don't have admin permissions!", ephemeral=True)
+                return
+            
+            # Get server stats
+            result = AdminManager.get_server_stats()
+            
+            if not result['success']:
+                await interaction.response.send_message(f"❌ {result['error']}", ephemeral=True)
+                return
+            
+            embed = discord.Embed(
+                title="📊 Server Statistics",
+                description="Overview of all connected servers",
+                color=0x3498db
+            )
+            
+            embed.add_field(name="🏢 Total Servers", value=f"**{result['total_servers']}**", inline=True)
+            embed.add_field(name="✅ Active Servers", value=f"**{len([s for s in result['servers'] if s['is_active']])}**", inline=True)
+            
+            # Show server details
+            if result['servers']:
+                server_text = ""
+                for server in result['servers'][:5]:  # Show first 5 servers
+                    status = "🟢" if server['is_active'] else "🔴"
+                    server_text += f"{status} **{server['server_name']}**\n"
+                    server_text += f"   Users: {server['user_count']} | Transactions: {server['discord_transactions']}\n"
+                
+                embed.add_field(name="🏢 Server Details", value=server_text or "No servers", inline=False)
+            
+            embed.add_field(
+                name="📈 Platform Stats",
+                value=f"• Total servers: {result['total_servers']}\n• Active servers: {len([s for s in result['servers'] if s['is_active']])}\n• Total users: {sum(s['user_count'] for s in result['servers'])}",
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Admin: {interaction.user.display_name}")
+            embed.timestamp = datetime.utcnow()
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    except Exception as e:
+        logger.error(f"Error in admin-servers command: {e}")
+        await interaction.response.send_message("❌ An error occurred while fetching server statistics.", ephemeral=True)
 
 
 def run_bot():

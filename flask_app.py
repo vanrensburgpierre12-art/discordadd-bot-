@@ -11,7 +11,9 @@ import requests
 from sqlalchemy import text
 
 from config import Config
-from database import db, User, GiftCard, AdCompletion, init_db
+from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, WalletTransaction, UserWallet, UserSubscription, DiscordTransaction, Server, AdminUser, init_db
+from wallet_manager import WalletManager
+from admin_manager import AdminManager
 from notifications import send_points_notification 
 
 # Configure logging
@@ -27,9 +29,12 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 CORS(app)
 
 # Initialize database
-init_db(app)
-
-print(">>> Using database:", app.config['SQLALCHEMY_DATABASE_URI'], flush=True)
+try:
+    init_db(app)
+    print(">>> Using database:", app.config['SQLALCHEMY_DATABASE_URI'], flush=True)
+except Exception as e:
+    logger.error(f"Database initialization failed: {e}")
+    print(f">>> Database initialization failed: {e}", flush=True)
 
 
 def verify_webhook_signature(payload, signature, secret):
@@ -48,19 +53,25 @@ def verify_webhook_signature(payload, signature, secret):
 @app.route('/')
 def index():
     """Home page with basic info"""
-    html = """
+    try:
+        # Simple HTML without complex CSS to avoid formatting issues
+        webhook_url = Config.WEBHOOK_URL or 'http://localhost:5000/postback'
+        threshold = Config.REDEMPTION_THRESHOLD
+        points_per_ad = Config.POINTS_PER_AD
+        
+        html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Rewards Platform Backend</title>
         <style>
-            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            h1 { color: #333; text-align: center; }
-            .endpoint { background: #f8f9fa; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #007bff; }
-            .method { background: #007bff; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px; }
-            .url { font-family: monospace; background: #e9ecef; padding: 5px; border-radius: 3px; }
-            .status { color: #28a745; font-weight: bold; }
+            body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
+            .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            h1 {{ color: #333; text-align: center; }}
+            .endpoint {{ background: #f8f9fa; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #007bff; }}
+            .method {{ background: #007bff; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px; }}
+            .url {{ font-family: monospace; background: #e9ecef; padding: 5px; border-radius: 3px; }}
+            .status {{ color: #28a745; font-weight: bold; }}
         </style>
     </head>
     <body>
@@ -88,10 +99,45 @@ def index():
                 <p>Platform statistics</p>
             </div>
             
+            <h2>🎰 Casino Games</h2>
+            <p>Users can play casino games with their points:</p>
+            <ul>
+                <li><strong>🎲 Dice Game:</strong> Guess 1-6, win 5x your bet if correct!</li>
+                <li><strong>🎰 Slot Machine:</strong> Spin for matching symbols with various multipliers</li>
+                <li><strong>🃏 Blackjack:</strong> Beat the dealer to 21 for 2x winnings</li>
+            </ul>
+            
+            <h2>💳 Wallet System</h2>
+            <p>Users can deposit cash to get points with bonuses:</p>
+            <ul>
+                <li><strong>💎 Deposit Packages:</strong> $5-$100 with 10% bonus points</li>
+                <li><strong>💵 Exchange Rate:</strong> 100 points per $1 (110 with bonus)</li>
+                <li><strong>💸 Withdrawals:</strong> Convert points back to cash via PayPal</li>
+                <li><strong>⚡ Instant Processing:</strong> Deposits processed immediately</li>
+            </ul>
+            
+            <h2>🚀 Discord Monetization</h2>
+            <p>Users can support the server and get exclusive benefits:</p>
+            <ul>
+                <li><strong>🚀 Server Boosts:</strong> Boost server for points and casino bonuses</li>
+                <li><strong>💳 Nitro Gifts:</strong> Gift Nitro for points and temporary bonuses</li>
+                <li><strong>⭐ Subscriptions:</strong> Monthly tiers with casino bonus multipliers</li>
+                <li><strong>🎰 Tier Benefits:</strong> Higher tiers = better casino odds (+5% to +15%)</li>
+            </ul>
+            
+            <h2>🔧 Admin Panel</h2>
+            <p>Administrative features for managing the platform:</p>
+            <ul>
+                <li><strong>📊 Transaction Approval:</strong> Approve/reject pending transactions</li>
+                <li><strong>🏢 Multi-Server Support:</strong> Manage multiple Discord servers</li>
+                <li><strong>👥 Admin Management:</strong> Add/remove admin users with different permission levels</li>
+                <li><strong>📈 Analytics:</strong> View server statistics and user activity</li>
+            </ul>
+            
             <h2>🔧 Configuration</h2>
             <ul>
                 <li><strong>Webhook URL:</strong> {webhook_url}</li>
-                <li><strong>Redemption Threshold:</strong> {threshold:,} points</li>
+                <li><strong>Redemption Threshold:</strong> {threshold} points</li>
                 <li><strong>Points per Ad:</strong> {points_per_ad} points</li>
             </ul>
             
@@ -107,17 +153,19 @@ def index():
     </html>
     """
     
-    return render_template_string(html, 
-                                webhook_url=Config.WEBHOOK_URL,
-                                threshold=Config.REDEMPTION_THRESHOLD,
-                                points_per_ad=Config.POINTS_PER_AD)
+        return html
+    except Exception as e:
+        logger.error(f"Error rendering main page: {e}")
+        return f"<h1>Rewards Platform Backend</h1><p>Error loading page: {str(e)}</p>", 500
 
 @app.route('/health')
 def health_check():
     """Health check endpoint"""
     try:
-        # Proper SQLAlchemy syntax
-        db.session.execute(text('SELECT 1'))
+        # Test database connection with proper error handling
+        with app.app_context():
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
         db_status = 'healthy'
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
@@ -140,6 +188,37 @@ def platform_stats():
         total_redemptions = GiftCard.query.filter_by(used=True).count()
         available_gift_cards = GiftCard.query.filter_by(used=False).count()
         
+        # Casino statistics
+        total_casino_games = CasinoGame.query.count()
+        total_casino_bets = db.session.query(db.func.sum(CasinoGame.bet_amount)).scalar() or 0
+        total_casino_winnings = db.session.query(db.func.sum(CasinoGame.win_amount)).scalar() or 0
+        casino_house_profit = total_casino_bets - total_casino_winnings
+        
+        # Game type breakdown
+        dice_games = CasinoGame.query.filter_by(game_type='dice').count()
+        slots_games = CasinoGame.query.filter_by(game_type='slots').count()
+        blackjack_games = CasinoGame.query.filter_by(game_type='blackjack').count()
+        
+        # Wallet statistics
+        total_deposits = db.session.query(db.func.sum(WalletTransaction.amount_usd)).filter_by(
+            transaction_type='deposit', status='completed'
+        ).scalar() or 0
+        total_withdrawals = db.session.query(db.func.sum(WalletTransaction.amount_usd)).filter_by(
+            transaction_type='withdrawal', status='completed'
+        ).scalar() or 0
+        total_wallet_transactions = WalletTransaction.query.count()
+        active_wallets = UserWallet.query.count()
+        
+        # Discord monetization statistics
+        active_subscriptions = UserSubscription.query.filter_by(is_active=True).count()
+        total_discord_transactions = DiscordTransaction.query.count()
+        total_discord_points = db.session.query(db.func.sum(DiscordTransaction.points_awarded)).scalar() or 0
+        
+        # Subscription tier breakdown
+        basic_subs = UserSubscription.query.filter_by(subscription_tier='basic', is_active=True).count()
+        premium_subs = UserSubscription.query.filter_by(subscription_tier='premium', is_active=True).count()
+        vip_subs = UserSubscription.query.filter_by(subscription_tier='vip', is_active=True).count()
+        
         return jsonify({
             'total_users': total_users,
             'total_points_in_circulation': total_points,
@@ -147,6 +226,38 @@ def platform_stats():
             'total_redemptions': total_redemptions,
             'available_gift_cards': available_gift_cards,
             'redemption_threshold': Config.REDEMPTION_THRESHOLD,
+            'casino': {
+                'total_games': total_casino_games,
+                'total_bets': total_casino_bets,
+                'total_winnings': total_casino_winnings,
+                'house_profit': casino_house_profit,
+                'game_breakdown': {
+                    'dice': dice_games,
+                    'slots': slots_games,
+                    'blackjack': blackjack_games
+                }
+            },
+            'wallet': {
+                'total_deposits_usd': float(total_deposits),
+                'total_withdrawals_usd': float(total_withdrawals),
+                'net_deposits_usd': float(total_deposits - total_withdrawals),
+                'total_transactions': total_wallet_transactions,
+                'active_wallets': active_wallets,
+                'exchange_rate': Config.POINTS_PER_DOLLAR,
+                'bonus_percentage': Config.WALLET_BONUS_PERCENTAGE * 100
+            },
+            'discord_monetization': {
+                'active_subscriptions': active_subscriptions,
+                'total_discord_transactions': total_discord_transactions,
+                'total_discord_points': total_discord_points,
+                'subscription_breakdown': {
+                    'basic': basic_subs,
+                    'premium': premium_subs,
+                    'vip': vip_subs
+                },
+                'available_tiers': len(Config.SUBSCRIPTION_TIERS),
+                'server_boost_levels': len(Config.SERVER_BOOST_REWARDS)
+            },
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:
@@ -344,6 +455,231 @@ def webhook_info():
     """
     
     return html
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Endpoint not found'}), 404
+
+@app.route('/wallet/packages')
+def wallet_packages():
+    """Get available wallet deposit packages"""
+    try:
+        packages = WalletManager.get_deposit_packages()
+        return jsonify(packages)
+    except Exception as e:
+        logger.error(f"Error getting wallet packages: {e}")
+        return jsonify({'error': 'Failed to get wallet packages'}), 500
+
+@app.route('/wallet/deposit', methods=['POST'])
+def create_deposit():
+    """Create a new deposit transaction"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        user_id = data.get('user_id')
+        amount_usd = data.get('amount_usd')
+        payment_method = data.get('payment_method', 'stripe')
+        
+        if not user_id or not amount_usd:
+            return jsonify({'error': 'Missing user_id or amount_usd'}), 400
+        
+        result = WalletManager.create_deposit_transaction(user_id, amount_usd, payment_method)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error creating deposit: {e}")
+        return jsonify({'error': 'Failed to create deposit'}), 500
+
+@app.route('/wallet/complete/<int:transaction_id>', methods=['POST'])
+def complete_deposit(transaction_id):
+    """Complete a deposit transaction (called by payment processor webhook)"""
+    try:
+        result = WalletManager.complete_deposit_transaction(transaction_id)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error completing deposit: {e}")
+        return jsonify({'error': 'Failed to complete deposit'}), 500
+
+@app.route('/wallet/info/<user_id>')
+def wallet_info(user_id):
+    """Get wallet information for a user"""
+    try:
+        result = WalletManager.get_wallet_info(user_id)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error getting wallet info: {e}")
+        return jsonify({'error': 'Failed to get wallet info'}), 500
+
+@app.route('/wallet/withdraw', methods=['POST'])
+def create_withdrawal():
+    """Create a withdrawal request"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        user_id = data.get('user_id')
+        amount_usd = data.get('amount_usd')
+        payment_method = data.get('payment_method', 'paypal')
+        
+        if not user_id or not amount_usd:
+            return jsonify({'error': 'Missing user_id or amount_usd'}), 400
+        
+        result = WalletManager.create_withdrawal_request(user_id, amount_usd, payment_method)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error creating withdrawal: {e}")
+        return jsonify({'error': 'Failed to create withdrawal'}), 500
+
+@app.route('/admin/pending-transactions')
+def admin_pending_transactions():
+    """Get pending transactions for admin approval"""
+    try:
+        # In a real implementation, you'd verify admin permissions here
+        # For now, we'll just return the data
+        result = AdminManager.get_pending_transactions()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting pending transactions: {e}")
+        return jsonify({'error': 'Failed to get pending transactions'}), 500
+
+@app.route('/admin/approve-transaction', methods=['POST'])
+def admin_approve_transaction():
+    """Approve a pending transaction"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        transaction_id = data.get('transaction_id')
+        transaction_type = data.get('transaction_type')
+        admin_user_id = data.get('admin_user_id')
+        notes = data.get('notes')
+        
+        if not all([transaction_id, transaction_type, admin_user_id]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        result = AdminManager.approve_transaction(transaction_id, transaction_type, admin_user_id, notes)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error approving transaction: {e}")
+        return jsonify({'error': 'Failed to approve transaction'}), 500
+
+@app.route('/admin/reject-transaction', methods=['POST'])
+def admin_reject_transaction():
+    """Reject a pending transaction"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        transaction_id = data.get('transaction_id')
+        transaction_type = data.get('transaction_type')
+        admin_user_id = data.get('admin_user_id')
+        reason = data.get('reason')
+        
+        if not all([transaction_id, transaction_type, admin_user_id, reason]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        result = AdminManager.reject_transaction(transaction_id, transaction_type, admin_user_id, reason)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error rejecting transaction: {e}")
+        return jsonify({'error': 'Failed to reject transaction'}), 500
+
+@app.route('/admin/servers')
+def admin_server_stats():
+    """Get server statistics for admin panel"""
+    try:
+        result = AdminManager.get_server_stats()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting server stats: {e}")
+        return jsonify({'error': 'Failed to get server statistics'}), 500
+
+@app.route('/admin/register-server', methods=['POST'])
+def admin_register_server():
+    """Register a new server"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        server_id = data.get('server_id')
+        server_name = data.get('server_name')
+        owner_id = data.get('owner_id')
+        
+        if not all([server_id, server_name, owner_id]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        result = AdminManager.register_server(server_id, server_name, owner_id)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error registering server: {e}")
+        return jsonify({'error': 'Failed to register server'}), 500
+
+@app.route('/admin/add-admin', methods=['POST'])
+def admin_add_admin():
+    """Add a new admin user"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        user_id = data.get('user_id')
+        username = data.get('username')
+        admin_level = data.get('admin_level', 'moderator')
+        created_by = data.get('created_by')
+        
+        if not all([user_id, username]):
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        result = AdminManager.add_admin(user_id, username, admin_level, created_by)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logger.error(f"Error adding admin: {e}")
+        return jsonify({'error': 'Failed to add admin'}), 500
 
 @app.errorhandler(404)
 def not_found(error):

@@ -5,9 +5,11 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-async def send_points_notification(bot: discord.ext.commands.Bot, user_id: str, points_earned: int, new_balance: int):
+async def send_points_notification(user_id: str, points_earned: int, new_balance: int):
     """Send a DM notification when user earns points"""
     try:
+        # Import bot from discord_bot module
+        from discord_bot import bot
         user = bot.get_user(int(user_id))
         if user:
             embed = discord.Embed(
