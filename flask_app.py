@@ -27,9 +27,12 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 CORS(app)
 
 # Initialize database
-init_db(app)
-
-print(">>> Using database:", app.config['SQLALCHEMY_DATABASE_URI'], flush=True)
+try:
+    init_db(app)
+    print(">>> Using database:", app.config['SQLALCHEMY_DATABASE_URI'], flush=True)
+except Exception as e:
+    logger.error(f"Database initialization failed: {e}")
+    print(f">>> Database initialization failed: {e}", flush=True)
 
 
 def verify_webhook_signature(payload, signature, secret):
@@ -48,19 +51,25 @@ def verify_webhook_signature(payload, signature, secret):
 @app.route('/')
 def index():
     """Home page with basic info"""
-    html = """
+    try:
+        # Simple HTML without complex CSS to avoid formatting issues
+        webhook_url = Config.WEBHOOK_URL or 'http://localhost:5000/postback'
+        threshold = Config.REDEMPTION_THRESHOLD
+        points_per_ad = Config.POINTS_PER_AD
+        
+        html = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Rewards Platform Backend</title>
         <style>
-            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            h1 { color: #333; text-align: center; }
-            .endpoint { background: #f8f9fa; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #007bff; }
-            .method { background: #007bff; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px; }
-            .url { font-family: monospace; background: #e9ecef; padding: 5px; border-radius: 3px; }
-            .status { color: #28a745; font-weight: bold; }
+            body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
+            .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            h1 {{ color: #333; text-align: center; }}
+            .endpoint {{ background: #f8f9fa; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #007bff; }}
+            .method {{ background: #007bff; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px; }}
+            .url {{ font-family: monospace; background: #e9ecef; padding: 5px; border-radius: 3px; }}
+            .status {{ color: #28a745; font-weight: bold; }}
         </style>
     </head>
     <body>
@@ -91,7 +100,7 @@ def index():
             <h2>🔧 Configuration</h2>
             <ul>
                 <li><strong>Webhook URL:</strong> {webhook_url}</li>
-                <li><strong>Redemption Threshold:</strong> {threshold:,} points</li>
+                <li><strong>Redemption Threshold:</strong> {threshold} points</li>
                 <li><strong>Points per Ad:</strong> {points_per_ad} points</li>
             </ul>
             
@@ -107,17 +116,19 @@ def index():
     </html>
     """
     
-    return render_template_string(html, 
-                                webhook_url=Config.WEBHOOK_URL,
-                                threshold=Config.REDEMPTION_THRESHOLD,
-                                points_per_ad=Config.POINTS_PER_AD)
+        return html
+    except Exception as e:
+        logger.error(f"Error rendering main page: {e}")
+        return f"<h1>Rewards Platform Backend</h1><p>Error loading page: {str(e)}</p>", 500
 
 @app.route('/health')
 def health_check():
     """Health check endpoint"""
     try:
-        # Proper SQLAlchemy syntax
-        db.session.execute(text('SELECT 1'))
+        # Test database connection with proper error handling
+        with app.app_context():
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
         db_status = 'healthy'
     except Exception as e:
         logger.error(f"Database health check failed: {e}")

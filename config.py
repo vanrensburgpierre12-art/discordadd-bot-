@@ -11,11 +11,11 @@ class Config:
     ADMIN_ROLE_ID = int(os.getenv('ADMIN_ROLE_ID', 0))
     
     # Database Configuration
-    DATA_DIR = Path("/app/data")
+    DATA_DIR = Path(os.getenv("DATA_DIR", "./data"))
     DATA_DIR.mkdir(parents=True, exist_ok=True)  # make sure dir exists
 
     DEFAULT_DB = DATA_DIR / "rewards.db"
-    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://rewards_user:rewards_pass@postgres:5432/rewards_db")
+    DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB}")
 
     
     # Webhook Configuration
