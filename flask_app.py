@@ -11,7 +11,7 @@ import requests
 from sqlalchemy import text
 
 from config import Config
-from database import db, User, GiftCard, AdCompletion, init_db
+from database import db, User, GiftCard, AdCompletion, CasinoGame, DailyCasinoLimit, init_db
 from notifications import send_points_notification 
 
 # Configure logging
@@ -97,6 +97,14 @@ def index():
                 <p>Platform statistics</p>
             </div>
             
+            <h2>🎰 Casino Games</h2>
+            <p>Users can play casino games with their points:</p>
+            <ul>
+                <li><strong>🎲 Dice Game:</strong> Guess 1-6, win 5x your bet if correct!</li>
+                <li><strong>🎰 Slot Machine:</strong> Spin for matching symbols with various multipliers</li>
+                <li><strong>🃏 Blackjack:</strong> Beat the dealer to 21 for 2x winnings</li>
+            </ul>
+            
             <h2>🔧 Configuration</h2>
             <ul>
                 <li><strong>Webhook URL:</strong> {webhook_url}</li>
@@ -151,6 +159,17 @@ def platform_stats():
         total_redemptions = GiftCard.query.filter_by(used=True).count()
         available_gift_cards = GiftCard.query.filter_by(used=False).count()
         
+        # Casino statistics
+        total_casino_games = CasinoGame.query.count()
+        total_casino_bets = db.session.query(db.func.sum(CasinoGame.bet_amount)).scalar() or 0
+        total_casino_winnings = db.session.query(db.func.sum(CasinoGame.win_amount)).scalar() or 0
+        casino_house_profit = total_casino_bets - total_casino_winnings
+        
+        # Game type breakdown
+        dice_games = CasinoGame.query.filter_by(game_type='dice').count()
+        slots_games = CasinoGame.query.filter_by(game_type='slots').count()
+        blackjack_games = CasinoGame.query.filter_by(game_type='blackjack').count()
+        
         return jsonify({
             'total_users': total_users,
             'total_points_in_circulation': total_points,
@@ -158,6 +177,17 @@ def platform_stats():
             'total_redemptions': total_redemptions,
             'available_gift_cards': available_gift_cards,
             'redemption_threshold': Config.REDEMPTION_THRESHOLD,
+            'casino': {
+                'total_games': total_casino_games,
+                'total_bets': total_casino_bets,
+                'total_winnings': total_casino_winnings,
+                'house_profit': casino_house_profit,
+                'game_breakdown': {
+                    'dice': dice_games,
+                    'slots': slots_games,
+                    'blackjack': blackjack_games
+                }
+            },
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:

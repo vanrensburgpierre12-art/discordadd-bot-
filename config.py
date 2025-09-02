@@ -14,8 +14,9 @@ class Config:
     DATA_DIR = Path(os.getenv("DATA_DIR", "./data"))
     DATA_DIR.mkdir(parents=True, exist_ok=True)  # make sure dir exists
 
+    # Default to PostgreSQL for production, SQLite for development
     DEFAULT_DB = DATA_DIR / "rewards.db"
-    DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB}")
+    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://rewards_user:rewards_pass@localhost:5432/rewards_db")
 
     
     # Webhook Configuration
@@ -29,8 +30,15 @@ class Config:
     REDEMPTION_THRESHOLD = int(os.getenv('REDEMPTION_THRESHOLD', 1000))
     POINTS_PER_AD = int(os.getenv('POINTS_PER_AD', 20))
     
+    # Casino Configuration
+    CASINO_MIN_BET = int(os.getenv('CASINO_MIN_BET', 10))
+    CASINO_MAX_BET = int(os.getenv('CASINO_MAX_BET', 500))
+    CASINO_DAILY_LIMIT = int(os.getenv('CASINO_DAILY_LIMIT', 1000))  # Max points that can be won/lost per day
+    CASINO_HOUSE_EDGE = float(os.getenv('CASINO_HOUSE_EDGE', 0.05))  # 5% house edge
+    
     # Rate Limiting
     EARN_COOLDOWN = int(os.getenv('EARN_COOLDOWN', 300))  # 5 minutes
+    CASINO_COOLDOWN = int(os.getenv('CASINO_COOLDOWN', 30))  # 30 seconds between casino games
     
     # Flask Configuration
     FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'your-flask-secret-key')

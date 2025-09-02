@@ -44,6 +44,33 @@ class AdCompletion(db.Model):
     def __repr__(self):
         return f'<AdCompletion User: {self.user_id}, Offer: {self.offer_id}>'
 
+class CasinoGame(db.Model):
+    __tablename__ = 'casino_games'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(20), nullable=False)
+    game_type = db.Column(db.String(50), nullable=False)  # 'dice', 'slots', 'blackjack', etc.
+    bet_amount = db.Column(db.Integer, nullable=False)
+    win_amount = db.Column(db.Integer, default=0)
+    result = db.Column(db.String(100), nullable=False)  # Game result details
+    played_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<CasinoGame User: {self.user_id}, Game: {self.game_type}, Bet: {self.bet_amount}>'
+
+class DailyCasinoLimit(db.Model):
+    __tablename__ = 'daily_casino_limits'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(20), nullable=False, unique=True)
+    date = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
+    total_won = db.Column(db.Integer, default=0)
+    total_lost = db.Column(db.Integer, default=0)
+    games_played = db.Column(db.Integer, default=0)
+    
+    def __repr__(self):
+        return f'<DailyCasinoLimit User: {self.user_id}, Date: {self.date}>'
+
 def init_db(app):
     """Initialize the database with the Flask app"""
     db.init_app(app)
