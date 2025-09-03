@@ -6,6 +6,7 @@ that can be imported by other modules without creating circular dependencies.
 
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from config import Config
 
 # Create Flask app instance
@@ -16,6 +17,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize database
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
 def get_app_context():
     """Get the Flask application context"""
