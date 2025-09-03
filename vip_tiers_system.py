@@ -388,7 +388,7 @@ diff --git a/vip_tiers_system.py b/vip_tiers_system.py
 +        try:
 +            with app.app_context():
 +                # Get all active users
-+                users = User.query.filter(User.user_status == 'active').all()
++                users = User.query.filter(User.user_status == 'active').limit(1000).all()
 +                
 +                tier_counts = {'none': 0}
 +                for tier in self.vip_tiers.keys():

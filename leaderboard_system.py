@@ -157,7 +157,7 @@ diff --git a/leaderboard_system.py b/leaderboard_system.py
 +                period_start, period_end = LeaderboardManager._get_period_dates(leaderboard.period)
 +                
 +                # Get all users
-+                users = User.query.filter(User.user_status == 'active').all()
++                users = User.query.filter(User.user_status == 'active').limit(1000).all()
 +                
 +                updated_count = 0
 +                for user in users:

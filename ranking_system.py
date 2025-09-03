@@ -25,7 +25,7 @@ diff --git a/ranking_system.py b/ranking_system.py
 +        try:
 +            with app.app_context():
 +                # Get all active users
-+                users = User.query.filter(User.user_status == 'active').all()
++                users = User.query.filter(User.user_status == 'active').limit(1000).all()
 +                
 +                # Calculate rankings for each category
 +                points_rankings = RankingManager._calculate_points_rankings(users)
