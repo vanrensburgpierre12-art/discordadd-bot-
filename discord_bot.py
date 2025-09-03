@@ -575,6 +575,7 @@ async def casino_info(interaction: discord.Interaction):
             daily_limit = DailyCasinoLimit.query.filter_by(user_id=user_id).first()
             # Only show daily limit info if it's for today
             if daily_limit and daily_limit.date == datetime.utcnow().date():
+                pass  # This condition is handled later in the embed creation
 
             embed = discord.Embed(
                 title="🎰 Casino Information",
