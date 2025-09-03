@@ -22,13 +22,11 @@ class CasinoManager:
         """Check if user has reached daily casino limits"""
         today = date.today()
         
-        # Get or create daily limit record
-        daily_limit = DailyCasinoLimit.query.filter_by(
-            user_id=user_id, 
-            date=today
-        ).first()
+        # Get existing daily limit record (there should only be one per user due to unique constraint)
+        daily_limit = DailyCasinoLimit.query.filter_by(user_id=user_id).first()
         
         if not daily_limit:
+            # Create new record for this user
             daily_limit = DailyCasinoLimit(
                 user_id=user_id,
                 date=today,
@@ -37,6 +35,13 @@ class CasinoManager:
                 games_played=0
             )
             db.session.add(daily_limit)
+            db.session.commit()
+        elif daily_limit.date != today:
+            # Reset daily limits for new day
+            daily_limit.date = today
+            daily_limit.total_won = 0
+            daily_limit.total_lost = 0
+            daily_limit.games_played = 0
             db.session.commit()
         
         # Check if user has reached daily limit
@@ -50,18 +55,42 @@ class CasinoManager:
     def update_daily_limits(user_id: str, bet_amount: int, win_amount: int):
         """Update daily limits after a game"""
         today = date.today()
-        daily_limit = DailyCasinoLimit.query.filter_by(
-            user_id=user_id, 
-            date=today
-        ).first()
+        daily_limit = DailyCasinoLimit.query.filter_by(user_id=user_id).first()
         
         if daily_limit:
+            # Check if this is a new day and reset if needed
+            if daily_limit.date != today:
+                daily_limit.date = today
+                daily_limit.total_won = 0
+                daily_limit.total_lost = 0
+                daily_limit.games_played = 0
+            
             daily_limit.games_played += 1
             if win_amount > bet_amount:
                 daily_limit.total_won += (win_amount - bet_amount)
             else:
                 daily_limit.total_lost += (bet_amount - win_amount)
             db.session.commit()
+        else:
+            # This shouldn't happen if check_daily_limits was called first, but handle it gracefully
+            logger.warning(f"Daily limit record not found for user {user_id}. Creating one.")
+            try:
+                daily_limit = DailyCasinoLimit(
+                    user_id=user_id,
+                    date=today,
+                    total_won=0,
+                    total_lost=0,
+                    games_played=1
+                )
+                if win_amount > bet_amount:
+                    daily_limit.total_won = (win_amount - bet_amount)
+                else:
+                    daily_limit.total_lost = (bet_amount - win_amount)
+                db.session.add(daily_limit)
+                db.session.commit()
+            except Exception as e:
+                logger.error(f"Failed to create daily limit record for user {user_id}: {e}")
+                db.session.rollback()
 
 class DiceGame:
     """Dice rolling game"""
