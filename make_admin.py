@@ -45,7 +45,7 @@ def list_admins():
     """List all current admins"""
     try:
         with app.app_context():
-            admins = AdminUser.query.all()
+            admins = AdminUser.query.limit(100).all()
             if not admins:
                 print("📋 No admins found")
                 return

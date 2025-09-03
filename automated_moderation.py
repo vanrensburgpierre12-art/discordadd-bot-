@@ -237,7 +237,7 @@ diff --git a/automated_moderation.py b/automated_moderation.py
 +                
 +                # Get users with suspicious patterns
 +                suspicious_users = 0
-+                users = User.query.filter(User.user_status == 'active').all()
++                users = User.query.filter(User.user_status == 'active').limit(1000).all()
 +                
 +                for user in users:
 +                    behavior = self.detect_suspicious_behavior(user.id)
@@ -265,7 +265,7 @@ diff --git a/automated_moderation.py b/automated_moderation.py
 +        """Scan all active users for suspicious behavior"""
 +        try:
 +            with app.app_context():
-+                users = User.query.filter(User.user_status == 'active').all()
++                users = User.query.filter(User.user_status == 'active').limit(1000).all()
 +                
 +                suspicious_users = []
 +                moderated_users = []

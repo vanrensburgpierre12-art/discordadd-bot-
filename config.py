@@ -70,4 +70,10 @@ class Config:
     FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
     FLASK_PORT = int(os.getenv('FLASK_PORT', 5000))
     FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    
+    # Discord Bot Connection Configuration
+    DISCORD_CONNECTION_TIMEOUT = int(os.getenv('DISCORD_CONNECTION_TIMEOUT', 30))  # seconds
+    DISCORD_RECONNECT_DELAY = int(os.getenv('DISCORD_RECONNECT_DELAY', 5))  # seconds
+    DISCORD_MAX_RECONNECT_ATTEMPTS = int(os.getenv('DISCORD_MAX_RECONNECT_ATTEMPTS', 10))
+    DISCORD_HEARTBEAT_TIMEOUT = int(os.getenv('DISCORD_HEARTBEAT_TIMEOUT', 60))  # seconds
 

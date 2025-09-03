@@ -206,12 +206,73 @@ def health_check():
         logger.error(f"Database health check failed: {e}")
         db_status = 'unhealthy'
     
+    # Get Discord bot status
+    discord_status = 'unknown'
+    discord_info = {}
+    try:
+        from discord_bot import bot
+        if hasattr(bot, 'get_connection_status'):
+            status = bot.get_connection_status()
+            discord_status = 'connected' if status['is_connected'] else 'disconnected'
+            discord_info = {
+                'connection_attempts': status['connection_attempts'],
+                'uptime_seconds': status['uptime'],
+                'recent_errors': status['recent_errors'],
+                'last_connection': status['last_connection_time'].isoformat() if status['last_connection_time'] else None
+            }
+        else:
+            discord_status = 'connected' if bot.is_ready() else 'not_ready'
+    except Exception as e:
+        logger.error(f"Error checking Discord bot status: {e}")
+        discord_status = 'error'
+        discord_info = {'error': str(e)}
+    
+    overall_status = 'healthy' if db_status == 'healthy' and discord_status in ['connected', 'unknown'] else 'unhealthy'
+    
     return jsonify({
-        'status': 'healthy' if db_status == 'healthy' else 'unhealthy',
+        'status': overall_status,
         'timestamp': datetime.utcnow().isoformat(),
         'database': db_status,
+        'discord_bot': {
+            'status': discord_status,
+            'info': discord_info
+        },
         'version': '1.0.0'
     })
+
+@app.route('/discord-status')
+def discord_status():
+    """Get detailed Discord bot status"""
+    try:
+        from discord_bot import bot
+        if hasattr(bot, 'get_connection_status'):
+            status = bot.get_connection_status()
+            return jsonify({
+                'status': 'connected' if status['is_connected'] else 'disconnected',
+                'connection_attempts': status['connection_attempts'],
+                'uptime_seconds': status['uptime'],
+                'recent_errors': status['recent_errors'],
+                'last_connection': status['last_connection_time'].isoformat() if status['last_connection_time'] else None,
+                'guilds': len(bot.guilds) if bot.is_ready() else 0,
+                'users': len(bot.users) if bot.is_ready() else 0,
+                'latency': round(bot.latency * 1000, 2) if bot.is_ready() else None,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+        else:
+            return jsonify({
+                'status': 'connected' if bot.is_ready() else 'not_ready',
+                'guilds': len(bot.guilds) if bot.is_ready() else 0,
+                'users': len(bot.users) if bot.is_ready() else 0,
+                'latency': round(bot.latency * 1000, 2) if bot.is_ready() else None,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+    except Exception as e:
+        logger.error(f"Error getting Discord status: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
 
 @app.route('/stats')
 def platform_stats():
