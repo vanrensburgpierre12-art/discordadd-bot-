@@ -422,11 +422,9 @@ async def dice(interaction: discord.Interaction, bet: int, guess: int):
             embed.add_field(name="New Balance", value=f"**{result['new_balance']:,}** points", inline=True)
             
             # Add daily limit info
-            daily_limit = DailyCasinoLimit.query.filter_by(
-                user_id=user_id, 
-                date=datetime.utcnow().date()
-            ).first()
-            if daily_limit:
+            daily_limit = DailyCasinoLimit.query.filter_by(user_id=user_id).first()
+            # Only show daily limit info if it's for today
+            if daily_limit and daily_limit.date == datetime.utcnow().date():
                 net_result = daily_limit.total_won - daily_limit.total_lost
                 embed.add_field(name="Daily Casino Result", value=f"**{net_result:+,}** points", inline=True)
 
@@ -484,11 +482,9 @@ async def slots(interaction: discord.Interaction, bet: int):
             embed.add_field(name="New Balance", value=f"**{result['new_balance']:,}** points", inline=True)
             
             # Add daily limit info
-            daily_limit = DailyCasinoLimit.query.filter_by(
-                user_id=user_id, 
-                date=datetime.utcnow().date()
-            ).first()
-            if daily_limit:
+            daily_limit = DailyCasinoLimit.query.filter_by(user_id=user_id).first()
+            # Only show daily limit info if it's for today
+            if daily_limit and daily_limit.date == datetime.utcnow().date():
                 net_result = daily_limit.total_won - daily_limit.total_lost
                 embed.add_field(name="Daily Casino Result", value=f"**{net_result:+,}** points", inline=True)
 
@@ -547,11 +543,9 @@ async def blackjack(interaction: discord.Interaction, bet: int):
             embed.add_field(name="New Balance", value=f"**{result['new_balance']:,}** points", inline=True)
             
             # Add daily limit info
-            daily_limit = DailyCasinoLimit.query.filter_by(
-                user_id=user_id, 
-                date=datetime.utcnow().date()
-            ).first()
-            if daily_limit:
+            daily_limit = DailyCasinoLimit.query.filter_by(user_id=user_id).first()
+            # Only show daily limit info if it's for today
+            if daily_limit and daily_limit.date == datetime.utcnow().date():
                 net_result = daily_limit.total_won - daily_limit.total_lost
                 embed.add_field(name="Daily Casino Result", value=f"**{net_result:+,}** points", inline=True)
 
@@ -578,10 +572,9 @@ async def casino_info(interaction: discord.Interaction):
                 return
 
             # Get daily limit info
-            daily_limit = DailyCasinoLimit.query.filter_by(
-                user_id=user_id, 
-                date=datetime.utcnow().date()
-            ).first()
+            daily_limit = DailyCasinoLimit.query.filter_by(user_id=user_id).first()
+            # Only show daily limit info if it's for today
+            if daily_limit and daily_limit.date == datetime.utcnow().date():
 
             embed = discord.Embed(
                 title="🎰 Casino Information",
@@ -597,7 +590,7 @@ async def casino_info(interaction: discord.Interaction):
             embed.add_field(name="⏰ Cooldown", value=f"**{Config.CASINO_COOLDOWN}** seconds", inline=True)
             embed.add_field(name="📊 Daily Limit", value=f"**{Config.CASINO_DAILY_LIMIT:,}** points", inline=True)
             
-            if daily_limit:
+            if daily_limit and daily_limit.date == datetime.utcnow().date():
                 net_result = daily_limit.total_won - daily_limit.total_lost
                 embed.add_field(name="📈 Today's Result", value=f"**{net_result:+,}** points", inline=True)
                 embed.add_field(name="🎮 Games Played", value=f"**{daily_limit.games_played}**", inline=True)
