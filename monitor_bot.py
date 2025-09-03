@@ -8,7 +8,12 @@ import requests
 import json
 import time
 import sys
+import logging
 from datetime import datetime
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def check_bot_status(base_url="http://localhost:5000"):
     """Check the Discord bot status via the Flask API"""
@@ -23,6 +28,7 @@ def check_bot_status(base_url="http://localhost:5000"):
         
         return health_data, discord_data
     except requests.exceptions.RequestException as e:
+        logger.error(f"Error connecting to API: {e}")
         print(f"❌ Error connecting to API: {e}")
         return None, None
 
@@ -95,6 +101,7 @@ def main():
             print("\n🛑 Monitor stopped by user")
             break
         except Exception as e:
+            logger.error(f"Unexpected error: {e}")
             print(f"❌ Unexpected error: {e}")
             time.sleep(10)
 
