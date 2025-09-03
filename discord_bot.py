@@ -2,6 +2,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import logging
+import asyncio
+import time
 from datetime import datetime, timedelta
 
 from config import Config
@@ -21,11 +23,27 @@ class RewardsBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(
+            command_prefix="!", 
+            intents=intents,
+            heartbeat_timeout=Config.DISCORD_HEARTBEAT_TIMEOUT,
+            max_messages=1000
+        )
+        
+        # Connection tracking
+        self.connection_attempts = 0
+        self.max_connection_attempts = Config.DISCORD_MAX_RECONNECT_ATTEMPTS
+        self.last_connection_time = None
+        self.is_connected = False
+        self.connection_errors = []
+        self.reconnect_delay = Config.DISCORD_RECONNECT_DELAY
 
     async def setup_hook(self):
         await self.tree.sync()
         logger.info("Bot setup complete!")
+        
+        # Start connection monitoring task
+        self.loop.create_task(self.connection_monitor())
 
     async def on_ready(self):
         logger.info(f"{self.user} has connected to Discord!")
@@ -95,6 +113,91 @@ class RewardsBot(commands.Bot):
                     logger.info(f"Bot removed from server: {guild.name} ({guild.id})")
         except Exception as e:
             logger.error(f"Error handling guild remove: {e}")
+
+    async def on_connect(self):
+        """Handle successful connection to Discord"""
+        self.is_connected = True
+        self.connection_attempts = 0
+        self.last_connection_time = datetime.utcnow()
+        self.connection_errors.clear()
+        logger.info("✅ Successfully connected to Discord Gateway")
+
+    async def on_disconnect(self):
+        """Handle disconnection from Discord"""
+        self.is_connected = False
+        logger.warning("⚠️ Disconnected from Discord Gateway")
+
+    async def on_resumed(self):
+        """Handle successful session resume"""
+        self.is_connected = True
+        self.connection_attempts = 0
+        self.last_connection_time = datetime.utcnow()
+        logger.info("🔄 Successfully resumed Discord session")
+
+    async def on_error(self, event, *args, **kwargs):
+        """Handle Discord client errors"""
+        error_msg = f"Discord error in {event}: {args}"
+        logger.error(f"❌ {error_msg}")
+        self.connection_errors.append({
+            'timestamp': datetime.utcnow(),
+            'event': event,
+            'error': str(args)
+        })
+        
+        # Keep only last 10 errors
+        if len(self.connection_errors) > 10:
+            self.connection_errors = self.connection_errors[-10:]
+
+    async def on_command_error(self, ctx, error):
+        """Handle command errors"""
+        if isinstance(error, commands.CommandNotFound):
+            return  # Ignore command not found errors
+        
+        logger.error(f"Command error in {ctx.command}: {error}")
+        
+        # Send user-friendly error message
+        try:
+            if isinstance(error, commands.MissingPermissions):
+                await ctx.send("❌ You don't have permission to use this command.")
+            elif isinstance(error, commands.CommandOnCooldown):
+                await ctx.send(f"⏰ This command is on cooldown. Try again in {error.retry_after:.1f} seconds.")
+            elif isinstance(error, commands.MissingRequiredArgument):
+                await ctx.send(f"❌ Missing required argument: {error.param}")
+            else:
+                await ctx.send("❌ An error occurred while processing your command.")
+        except Exception as e:
+            logger.error(f"Error sending error message: {e}")
+
+    def get_connection_status(self):
+        """Get current connection status information"""
+        return {
+            'is_connected': self.is_connected,
+            'connection_attempts': self.connection_attempts,
+            'last_connection_time': self.last_connection_time,
+            'recent_errors': len(self.connection_errors),
+            'uptime': (datetime.utcnow() - self.last_connection_time).total_seconds() if self.last_connection_time else 0
+        }
+
+    async def connection_monitor(self):
+        """Monitor connection health and log status periodically"""
+        while True:
+            try:
+                await asyncio.sleep(300)  # Check every 5 minutes
+                
+                if self.is_connected and self.last_connection_time:
+                    uptime = (datetime.utcnow() - self.last_connection_time).total_seconds()
+                    if uptime > 3600:  # Log every hour
+                        logger.info(f"🟢 Bot connection healthy - uptime: {uptime/3600:.1f} hours, latency: {self.latency*1000:.1f}ms")
+                
+                # Log connection errors if any
+                if self.connection_errors:
+                    recent_errors = [e for e in self.connection_errors if (datetime.utcnow() - e['timestamp']).total_seconds() < 3600]
+                    if recent_errors:
+                        logger.warning(f"⚠️ {len(recent_errors)} connection errors in the last hour")
+                        
+            except Exception as e:
+                logger.error(f"Error in connection monitor: {e}")
+                await asyncio.sleep(60)  # Wait a minute before retrying
 
 bot = RewardsBot()
 
@@ -1306,10 +1409,57 @@ def run_bot():
         logger.error("Discord token not found in environment variables!")
         return
 
+    async def start_bot():
+        """Start the bot with proper error handling and reconnection logic"""
+        while True:
+            try:
+                logger.info("🤖 Starting Discord bot...")
+                await bot.start(Config.DISCORD_TOKEN)
+                break  # If we get here, the bot shut down normally
+            except discord.LoginFailure:
+                logger.error("❌ Invalid Discord token! Please check your DISCORD_TOKEN environment variable.")
+                break
+            except discord.ConnectionClosed as e:
+                logger.error(f"❌ Discord connection closed: {e}")
+                if e.code == 1000:  # Normal closure
+                    logger.info("🔄 Connection closed normally, attempting to reconnect...")
+                elif e.code == 4004:  # Authentication failed
+                    logger.error("❌ Authentication failed. Check your bot token.")
+                    break
+                elif e.code == 4009:  # Session timed out
+                    logger.warning("⏰ Session timed out, reconnecting...")
+                else:
+                    logger.warning(f"⚠️ Unexpected connection closure (code {e.code}), reconnecting...")
+                
+                # Wait before reconnecting
+                await asyncio.sleep(bot.reconnect_delay)
+                continue
+            except discord.HTTPException as e:
+                logger.error(f"❌ Discord HTTP error: {e}")
+                if e.status == 401:  # Unauthorized
+                    logger.error("❌ Bot token is invalid!")
+                    break
+                elif e.status == 429:  # Rate limited
+                    logger.warning("⏰ Rate limited, waiting before retry...")
+                    await asyncio.sleep(60)
+                    continue
+                else:
+                    await asyncio.sleep(10)
+                    continue
+            except Exception as e:
+                logger.error(f"❌ Unexpected error: {e}")
+                await asyncio.sleep(10)
+                continue
+
+    # Run the bot with proper event loop handling
     try:
-        bot.run(Config.DISCORD_TOKEN)
+        asyncio.run(start_bot())
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot shutdown requested by user")
     except Exception as e:
-        logger.error(f"Error running bot: {e}")
+        logger.error(f"❌ Fatal error running bot: {e}")
+    finally:
+        logger.info("✅ Bot shutdown complete")
 
 
 if __name__ == "__main__":
